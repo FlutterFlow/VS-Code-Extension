@@ -1,0 +1,156 @@
+{
+  "name": "flutterflow-custom-code-editor",
+  "displayName": "FlutterFlow: Custom Code Editor",
+  "description": "Edit your FlutterFlow custom  widgets, action, and functions.",
+  "version": "1.1.0",
+  "publisher": "FlutterFlow",
+  "icon": "./assets/FlutterFlowLogo.png",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "enabledApiProposals": [
+    "treeViewActiveItem"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "flutterflow-download",
+        "title": "FlutterFlow: Download Code"
+      },
+      {
+        "command": "flutterflow-run-custom-code-editor",
+        "title": "FlutterFlow: Start Code Editing Session"
+      },
+      {
+        "command": "extension.pullLatest",
+        "title": "FlutterFlow: Pull Latest Changes"
+      },
+      {
+        "command": "extension.callApi",
+        "title": "FlutterFlow: Push to FlutterFlow"
+      },
+      {
+        "command": "fileErrors.openFile",
+        "title": "Open File"
+      },
+      {
+        "command": "modifiedFiles.onClick",
+        "title": "On select item"
+      }
+    ],
+    "configuration": {
+      "title": "FlutterFlow",
+      "properties": {
+        "flutterflow.userApiToken": {
+          "type": "string",
+          "description": "Your FlutterFlow API Token. You can find it on your API token in your flutteflow account page."
+        },
+        "flutterflow.downloadLocation": {
+          "type": "string",
+          "description": "Directory path where FlutterFlow projects will be downloaded.",
+          "format": "directory"
+        },
+        "flutterflow.projectId": {
+          "type": "string",
+          "description": "Default project ID to download code from."
+        },
+        "flutterflow.branchName": {
+          "type": "string",
+          "description": "Branch name of your flutterflow project to download (default: main)."
+        },
+        "flutterflow.urlOverride": {
+          "type": [
+            "string"
+          ],
+          "default": "",
+          "markdownDescription": "Override the default FlutterFlow API URL",
+          "scope": "machine-overridable"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "flutterflow-sidebar",
+          "title": "FlutterFlow",
+          "icon": "./assets/FlutterFlowLogo.png"
+        }
+      ]
+    },
+    "views": {
+      "flutterflow-sidebar": [
+        {
+          "id": "fileListTreeView",
+          "name": "Modified Files"
+        },
+        {
+          "type": "tree",
+          "id": "fileErrors",
+          "name": "FlutterFlow Warnings"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "./node_modules/typescript/bin/tsc",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "compile-tests": "tsc -p . --outDir dist",
+    "watch-tests": "tsc -p . -w --outDir dist",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint -c eslint.config.mjs src",
+    "test": "./node_modules/typescript/bin/tsc && node ./dist/test/runTest.js",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "@types/adm-zip": "^0.5.5",
+    "@types/chai": "^5.0.0",
+    "@types/jest": "^29.5.12",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "20.x",
+    "@types/node-fetch": "^2.6.11",
+    "@types/sinon": "^17.0.3",
+    "@types/uuid": "^10.0.0",
+    "@types/vscode": "^1.91.0",
+    "@typescript-eslint/eslint-plugin": "^7.14.1",
+    "@typescript-eslint/parser": "^7.11.0",
+    "@vscode/test-cli": "^0.0.9",
+    "@vscode/test-electron": "^2.4.1",
+    "chai": "^5.1.1",
+    "esbuild": "^0.21.5",
+    "eslint": "^8.57.0",
+    "globals": "^15.9.0",
+    "jest": "^29.7.0",
+    "mocha": "^10.7.3",
+    "npm-run-all": "^4.1.5",
+    "sinon": "^19.0.2",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.4.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "@types/axios": "^0.9.36",
+    "@types/vscode-webview": "^1.57.5",
+    "adm-zip": "^0.5.14",
+    "axios": "^1.7.7",
+    "clean": "^4.0.2",
+    "extract-zip": "^2.0.1",
+    "fs-extra": "^11.2.0",
+    "ts-node": "^10.9.2",
+    "uuid": "^10.0.0",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver-types": "^3.17.5"
+  }
+}

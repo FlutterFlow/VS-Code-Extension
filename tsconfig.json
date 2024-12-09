@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"module": "commonjs",
+		"target": "ES2022",
+		"lib": [
+			"ES2022"
+		],
+		"sourceMap": true,
+		"rootDir": "src",
+		"strict": true,
+		"outDir": "dist",
+		"esModuleInterop": true,
+		"resolveJsonModule": true,
+		"allowJs": true,
+		"skipLibCheck": true,
+		"types": ["mocha","node", "vscode"],
+		"rootDirs": ["src", "packages"]
+	},
+	"include": ["src/**/*", "test/**/*", "src/test/data/**/*"],
+	"exclude": ["node_modules", "dist"]
+}

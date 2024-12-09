@@ -1,0 +1,14 @@
+targets:
+  $default:
+    builders:
+      build_web_compilers|entrypoint:
+        generate_for:
+          - analyzer.dart
+        options:
+          compiler: dart2js
+          dart2js_args:
+            - --minify
+            - --no-source-maps
+            - --csp
+            - --trust-primitives
+            - --trust-type-annotations
