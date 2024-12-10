@@ -70,14 +70,13 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
   const runDownloadCode = vscode.commands.registerCommand(
     "flutterflow-download",
     async (args: DownloadCodeArgs) => {
-      console.log('RYANDEBUG args: ', args);
       try {
         const projectConfigs = await downloadCodeWithPrompt(context, args);
         if (!projectConfigs) {
           return;
         }
       } catch (error) {
-        console.log('RYANDEBUG download error: ', error);
+        console.log('download error: ', error);
         throw error;
       }
     }

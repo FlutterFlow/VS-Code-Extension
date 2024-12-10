@@ -103,5 +103,12 @@ suite('FlutterFlow Extension Tests', () => {
         const fileMap = JSON.parse(fs.readFileSync(fileMapPath, 'utf-8'));
         assert.ok(fileMap, 'File map should be valid JSON');
         console.log('File map content:', JSON.stringify(fileMap, null, 2));
+        // TODO: We need to extend this test do  something like:
+        // take a list of projects and download them.
+        // for each addand action, function, and widget, push then pull, then verify
+        // edit all existing actions widgets and functions (maybe just with a comment), push pull and verify
+        // delete the original added action, function, and widget, push pull and verify
+        // -----
+        // If we do this on a larg enough set of projects its 
     });
 });

@@ -93,13 +93,11 @@ export interface DownloadCodeArgs {
 
 export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}) {
     // Read project id from existing data and prompt user if not found.
-    console.log('RYANDEBUG: downloadCodeWithPrompt 0');
     let projectId;
     if (args.projectId) {
         projectId = args.projectId;
     } else {
         const defaultProjectId = vscode.workspace.getConfiguration("flutterflow").get<string>("projectId") || "";
-        console.log('RYANDEBUG: downloadCodeWithPrompt 1 ', defaultProjectId);
         projectId = await vscode.window.showInputBox({
             prompt: "Enter your project ID",
             placeHolder: "e.g. PROJECT-123",
@@ -107,7 +105,6 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             ignoreFocusOut: true,
         });
     }
-    console.log('RYANDEBUG: downloadCodeWithPrompt 2 ', projectId);
     if (projectId) {
         vscode.window.showInformationMessage(
             `Project ID saved: ${projectId}`
@@ -205,12 +202,9 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             // context.globalState.update("branchName", branchName);
             context.workspaceState.update("updateManager", updateManager);
 
-            console.log('RYANDEBUG downloadCodeWithPrompt 3');
             if (!args.skipOpen) {
                 await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(projectPath));
-                console.log('RYANDEBUG: should have opened folder');
             }
-            console.log('RYANDEBUG downloadCodeWithPrompt 4');
             vscode.window.showInformationMessage("Code download successful");
         } catch (error) {
             vscode.window.showErrorMessage(`Error downloading project: ${(error as Error).message}`);
