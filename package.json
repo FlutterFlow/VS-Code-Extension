@@ -4,6 +4,10 @@
   "description": "Edit your FlutterFlow custom  widgets, action, and functions.",
   "version": "1.1.2",
   "publisher": "FlutterFlow",
+  "repository": {
+		"type": "git",
+		"url": "https://github.com/FlutterFlow/VS-Code-Extension"
+	},
   "icon": "./assets/FlutterFlowLogo.png",
   "engines": {
     "vscode": "^1.91.0"
