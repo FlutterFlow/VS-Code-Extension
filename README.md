@@ -9,6 +9,8 @@ Besides the API key, there are some additional optional settings that can be use
 
 You can also set the **Download Location** to use as the initial file location where the code will be downloaded.
 
+_Note that if you want the extension to use Flutter Version Management (FVM) under-the-hood for managing the correct version of Flutter, please ensure it's been [installed](https://fvm.app/documentation/getting-started/installation) and added to your path_
+
 
 ## Basic Usage:
 
@@ -76,7 +78,6 @@ Please note that this action cannot be undone. Make sure that you don’t have c
 ### Pulling Changes From FlutterFlow into VSCode
 
 As you make changes in FlutterFlow, you’ll want to pull those changes down into your local repository. This is especially useful for when you add new Components, App State Variables or Custom Data Types / Enums that you may want to reference in your custom code.
-
 
 To pull changes click the `Pull Latest` icon on the lower status bar or run the `FlutterFlow: Pull Latest Changes` command.
 
