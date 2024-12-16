@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.3
+
+- Fix issue with multi-line exports in generated index.dart files.
+
 ## 1.1.2
 
 - Add separate FlutterFlow panel containing the modified files and problems panels
