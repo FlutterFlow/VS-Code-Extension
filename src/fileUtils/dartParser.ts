@@ -6,16 +6,6 @@ interface DartAnalyzerResult {
     enums: { name: string, values: string[] }[];
 }
 
-interface ExportContent { 
-   fileName: string;
-   exportNames: string[]; 
-}
-function toMap(content: ExportContent): Map<string, string[]> {
-    const map = new Map<string, string[]>();
-    map.set(content.fileName, content.exportNames);
-    return map;
-}
-
 function analyzeWithDartAnalyzer(dartCode: string): DartAnalyzerResult {
     // returns a json object
     const resultJSON: string = analyzeDartCode(dartCode);
