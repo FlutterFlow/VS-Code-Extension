@@ -5,6 +5,8 @@ import { pathToFileURL } from 'url';
 declare global {
     interface Window {
         analyzeDartCode: (code: string) => string;
+        parseIndexFile: (code: string) => string;
+        formatDartCodeJs: (code: string) => string;
     }
     var window: Window;
     var analyzer: Record<string, unknown>;
@@ -29,4 +31,6 @@ global.location = {
 };
 
 // Export the analyzeDartCode function with proper typing
-export default globalThis.window.analyzeDartCode;
+export const analyzeDartCode = globalThis.window.analyzeDartCode;
+export const parseIndexFile = globalThis.window.parseIndexFile;
+export const formatDartCodeJs = globalThis.window.formatDartCodeJs;

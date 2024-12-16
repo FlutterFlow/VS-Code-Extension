@@ -7,7 +7,7 @@ import { EventEmitter } from 'events';
 import { readFileMap, writeFileMap } from "../fileUtils/fileParsing";
 import { FunctionChange, functionSimilarity } from "../fileUtils/functionSimilarity";
 import { insertCustomActionBoilerplate, insertCustomWidgetBoilerplate, toCamelCase, toPascalCase } from "../fileUtils/addBoilerplate";
-import { parseTopLevelFunctions, getTopLevelNames } from '../fileUtils/dartParser';
+import { parseTopLevelFunctions, getTopLevelNames, parseIndexFileWithDart, formatDartCode } from '../fileUtils/dartParser';
 
 // Path to store snapshot of custom functions for tracking changes
 const kCustomFunctionsSnapshotPath = path.join('lib', 'flutter_flow', 'custom_functions_snapshot.txt');
@@ -353,7 +353,8 @@ export class UpdateManager {
 
   private async saveIndexFile(indexContent: Map<string, string[]>, filePath: string) {
     const fileContent = Array.from(indexContent.entries()).map(([key, value]) => `export '${key}' show ${value.join(', ')};`).join('\n');
-    await fs.promises.writeFile(filePath, fileContent || '// No exports');
+    const formattedContent = formatDartCode(fileContent);
+    await fs.promises.writeFile(filePath, formattedContent || '// No exports');
   }
 
   /**
@@ -535,17 +536,7 @@ async function computeFileMap(filePath: string): Promise<Map<string, FileInfo>> 
  * @returns Map of exports
  */
 function parseIndexFile(content: string): Map<string, string[]> {
-  const index = new Map<string, string[]>();
-  const lines = content.split('\n');
-  for (const line of lines) {
-    const match = line.match(/export '([^']+)' show (.+);/);
-    if (match) {
-      const filename = match[1];
-      const exports = match[2].split(',').map(s => s.trim());
-      index.set(filename, exports);
-    }
-  }
-  return index;
+  return parseIndexFileWithDart(content);
 }
 
 /**

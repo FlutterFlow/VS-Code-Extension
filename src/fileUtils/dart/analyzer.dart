@@ -3,17 +3,27 @@
 library analyzer;
 
 import 'dart:convert';
+import 'package:dart_style/dart_style.dart';
 import 'package:js/js.dart';
 import 'package:js/js_util.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/analysis/features.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 
 @JS('analyzeDartCode')
 external set _analyzeDartCode(dynamic Function(String) f);
 
+@JS('parseIndexFile')
+external set _parseIndexFile(dynamic Function(String) f);
+
+@JS('formatDartCodeJs')
+external set _formatDartCodeJs(dynamic Function(String) f);
+
 void main() {
   _analyzeDartCode = allowInterop(analyzeDartCode);
+  _parseIndexFile = allowInterop(parseIndexFile);
+  _formatDartCodeJs = allowInterop(formatDartCodeJs);
 }
 
 String analyzeDartCode(String code) {
@@ -95,5 +105,55 @@ String analyzeDartCode(String code) {
       'error': e.toString(),
       'stackTrace': stackTrace.toString(),
     });
+  }
+}
+
+class ExportVisitor extends SimpleAstVisitor<void> {
+  final Map<String, List<String>> exports = {};
+
+  @override
+  void visitExportDirective(ExportDirective node) {
+    final uri = node.uri.stringValue;
+    if (uri != null) {
+      final shows = node.combinators
+          .whereType<ShowCombinator>()
+          .expand((show) => show.shownNames)
+          .map((id) => id.name)
+          .toList();
+
+      if (shows.isNotEmpty) {
+        exports[uri] = shows;
+      }
+    }
+  }
+}
+
+String parseIndexFile(String content) {
+  try {
+    // Parse the content into an AST
+    final parseResult = parseString(
+      content: content,
+      featureSet: FeatureSet.latestLanguageVersion(),
+    );
+
+    // Create and use our visitor
+    final visitor = ExportVisitor();
+    parseResult.unit.visitChildren(visitor);
+
+    return jsonEncode(visitor.exports);
+  } catch (e) {
+    print('Error parsing exports: $e');
+    return '{}';
+  }
+}
+
+String formatDartCodeJs(String sourceCode) {
+  try {
+    final formatter = DartFormatter();
+    return formatter.format(sourceCode);
+  } catch (e) {
+    // If formatting fails, return the original code
+    print('Formatting failed: $e');
+    return sourceCode;
   }
 }
