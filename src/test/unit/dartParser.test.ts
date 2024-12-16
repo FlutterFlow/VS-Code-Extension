@@ -3,10 +3,10 @@
 
 import * as assert from 'assert';
 import { describe, it } from 'mocha';
-import { parseTopLevelFunctions } from '../../fileUtils/dartParser';
+import { parseTopLevelFunctions, parseIndexFileWithDart } from '../../fileUtils/dartParser';
 
 describe('dartParser', () => {
-    const testCases = [
+    const functionParsingTestCases = [
         {
             description: 'basic function',
             input: `
@@ -281,10 +281,46 @@ class _AcontainerState extends State<Acontainer> {
 
     ];
 
-    testCases.forEach((testCase) => {
-        it(`should parse case "${testCase.description}" correctly`, async () => {
+    functionParsingTestCases.forEach((testCase) => {
+        it(`should parse function case "${testCase.description}" correctly`, async () => {
             const result = await parseTopLevelFunctions(testCase.input);
             assert.deepEqual(result, testCase.expected);
+        });
+    });
+
+    const indexParsingTestCases = [
+        {
+            description: 'basic index file with multiline exports',
+            input: `
+            export 'custom_auth_registration_action.dart' show customAuthRegistrationAction;
+export 'custom_auth_login_by_o_t_p_action.dart' show customAuthLoginByOTPAction;
+export 'custom_auth_update_password_action.dart'
+    show customAuthUpdatePasswordAction;
+export 'custom_auth_sign_in_action.dart' show customAuthSignInAction;
+export 'show_awesome_snackbar.dart' show showAwesomeSnackbar;
+export 'sync_favorite_categories.dart' show syncFavoriteCategories;
+export 'get_profile_info.dart' show getProfileInfo;
+export 'custom_auth_reset_password_action.dart'
+    show customAuthResetPasswordAction;
+
+
+            `,
+            expectedExportMap: new Map<string, string[]>([
+                ['custom_auth_registration_action.dart', ['customAuthRegistrationAction']],
+                ['custom_auth_login_by_o_t_p_action.dart', ['customAuthLoginByOTPAction']],
+                ['custom_auth_update_password_action.dart', ['customAuthUpdatePasswordAction']],
+                ['custom_auth_sign_in_action.dart', ['customAuthSignInAction']],
+                ['show_awesome_snackbar.dart', ['showAwesomeSnackbar']],
+                ['sync_favorite_categories.dart', ['syncFavoriteCategories']],
+                ['get_profile_info.dart', ['getProfileInfo']],
+                ['custom_auth_reset_password_action.dart', ['customAuthResetPasswordAction']]
+            ]),
+        },
+    ];
+    indexParsingTestCases.forEach((testCase) => {
+        it(`should parse index case "${testCase.description}" correctly`, async () => {
+            const result = parseIndexFileWithDart(testCase.input);
+            assert.deepEqual(result, testCase.expectedExportMap);
         });
     });
 });

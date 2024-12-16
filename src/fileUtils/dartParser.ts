@@ -1,4 +1,4 @@
-import analyzeDartCode from './dart/analyzer';
+import { analyzeDartCode, parseIndexFile, formatDartCodeJs } from './dart/analyzer';
 
 interface DartAnalyzerResult {
     functions: { name: string, returnType: string, parameters: string, startLocation: number, endLocation: number }[];
@@ -26,4 +26,26 @@ export async function getTopLevelNames(dartCode: string): Promise<string[]> {
 export async function parseTopLevelFunctions(dartCode: string): Promise<FunctionInfo[]> {
     const analysis = analyzeWithDartAnalyzer(dartCode);
     return analysis.functions.map(f => ({ name: f.name, content: dartCode.substring(f.startLocation, f.endLocation) }));
+}
+
+export function parseIndexFileWithDart(dartCode: string): Map<string, string[]> {
+    const resultJSON: string = parseIndexFile(dartCode);
+    const json = JSON.parse(resultJSON);
+    const resultMap = new Map<string, string[]>();
+    
+    Object.entries(json).forEach(([key, value]) => {
+        // If value is already an array, store it directly
+        if (Array.isArray(value)) {
+            resultMap.set(key, value.map(String));
+        } else {
+            // For non-array values, wrap them in an array
+            resultMap.set(key, [String(value)]);
+        }
+    });
+    
+    return resultMap;
+}
+
+export function formatDartCode(dartCode: string): string {
+    return formatDartCodeJs(dartCode);
 }
