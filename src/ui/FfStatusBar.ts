@@ -4,9 +4,9 @@ export class FfStatusBar extends vscode.Disposable {
     private syncButton: vscode.StatusBarItem;
     private pullStatusBarItem: vscode.StatusBarItem;
     private projectIdBarItem: vscode.StatusBarItem;
+    private branchNameItem: vscode.StatusBarItem;
 
-
-    constructor(projectId: string) {
+    constructor(projectId: string, branchName: string) {
         super(() => {
             this.syncButton.dispose();
             this.pullStatusBarItem.dispose();
@@ -32,10 +32,15 @@ export class FfStatusBar extends vscode.Disposable {
         this.projectIdBarItem.text = `$(project) Project ID: ${projectId}`;
         this.projectIdBarItem.tooltip = "Click to open FlutterFlow project";
         this.projectIdBarItem.command = "extension.openFlutterFlowProject";
+
+        this.branchNameItem = vscode.window.createStatusBarItem();
+        this.branchNameItem.text = `Branch: ${branchName || "main"}`;
+        this.branchNameItem.tooltip = "Branch of the FlutterFlow project we are currently editing.";
     }
 
-    public updateProjectId(projectId: string) {
+    public updateProjectAndBranch(projectId: string, branchName: string) {
         this.projectIdBarItem.text = `$(project) Project ID: ${projectId}`;
+        this.branchNameItem.text = `$(git-branch) Branch: ${branchName || "main"}`;
         this.show();
     }
 
@@ -43,6 +48,7 @@ export class FfStatusBar extends vscode.Disposable {
         this.syncButton.show();
         this.pullStatusBarItem.show();
         this.projectIdBarItem.show();
+        this.branchNameItem.show();
     }
 
 

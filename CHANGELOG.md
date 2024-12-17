@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.5
+
+- Added branch name info to status bar.
+
 ## 1.1.3
 
 - Fix issue with multi-line exports in generated index.dart files.
