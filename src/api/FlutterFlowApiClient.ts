@@ -76,7 +76,8 @@ export class FlutterFlowApiClient {
 
     // Getter for the branch name to ensure read-only access
     get branchName(): string {
-        return this._branchName;
+        // "main" and "" both represent the default branch in FlutterFlow. The APIs expect "".
+        return this._branchName === 'main' ? '' : this._branchName;
     }
 
     /**
