@@ -125,7 +125,7 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             process.env.FLUTTERFLOW_BRANCH_NAME ||
             vscode.workspace.getConfiguration("flutterflow").get("branchName");
         const branchNameInput = await vscode.window.showInputBox({
-            prompt: "Enter the desired branch name (leave blank for default main)",
+            prompt: "Enter the desired branch name (leave blank for main)",
             placeHolder: "e.g. mybranch",
             value: branchName || "",
             ignoreFocusOut: true,
