@@ -71,10 +71,20 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     "flutterflow-download",
     async (args: DownloadCodeArgs) => {
       try {
+        const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const projectConfigs = await downloadCodeWithPrompt(context, args);
         if (!projectConfigs) {
           return;
         }
+
+        // Check if project path matches current workspace and it is already initialized
+        if (projectConfigs.projectPath === currentWorkspacePath && projectState?.updateManager) {
+          // If project path matches current workspace, initialize the coding session. 
+          // A common reason for this is that the user has already downloaded the code and is trying to download it again
+          // or the user is switching branches.
+          await initCodeEditorFn();
+        }
+        projectConfigs.projectPath
       } catch (error) {
         console.log('download error: ', error);
         throw error;

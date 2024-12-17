@@ -91,7 +91,7 @@ export interface DownloadCodeArgs {
     skipOpen?: boolean;
 }
 
-export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}) {
+export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{projectId: string, projectPath: string} | undefined> {
     // Read project id from existing data and prompt user if not found.
     let projectId;
     if (args.projectId) {
@@ -171,7 +171,7 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
         );
     } else {
         vscode.window.showInformationMessage("Download cancelled.");
-        return "";
+        return undefined;
     }
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -210,5 +210,5 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             vscode.window.showErrorMessage(`Error downloading project: ${(error as Error).message}`);
         }
     });
-    return [projectId, projectPath];
+    return { projectId, projectPath };
 };
