@@ -84,7 +84,6 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
           // or the user is switching branches.
           await initCodeEditorFn();
         }
-        projectConfigs.projectPath
       } catch (error) {
         console.log('download error: ', error);
         throw error;
