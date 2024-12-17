@@ -18,7 +18,7 @@ import { FlutterFlowMetadata } from "./ffState/FlutterFlowMetadata";
 const kCustomFilePattern = `**/{pubspec.yaml,lib/custom_code/**,lib/flutter_flow/custom_functions.dart}`;
 
 // Initialize UI components
-const ffStatusBar: FfStatusBar = new FfStatusBar('unset project id');
+const ffStatusBar: FfStatusBar = new FfStatusBar('unset project id', 'unset branch name');
 const modifiedFileTreeProvider = new FFCustomCodeTreeProvider();
 const fileErrorProvider = new FileErrorProvider(new Map(), vscode.workspace.workspaceFolders?.[0].uri.fsPath || "", new Map());
 
@@ -71,9 +71,18 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     "flutterflow-download",
     async (args: DownloadCodeArgs) => {
       try {
+        const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const projectConfigs = await downloadCodeWithPrompt(context, args);
         if (!projectConfigs) {
           return;
+        }
+
+        // Check if project path matches current workspace and it is already initialized
+        if (projectConfigs.projectPath === currentWorkspacePath && projectState?.updateManager) {
+          // If project path matches current workspace, initialize the coding session. 
+          // A common reason for this is that the user has already downloaded the code and is trying to download it again
+          // or the user is switching branches.
+          await initCodeEditorFn();
         }
       } catch (error) {
         console.log('download error: ', error);
@@ -90,7 +99,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     }
     const { metadata, updateManager } = initResult;
     projectMetadata = metadata;
-    ffStatusBar.updateProjectId(metadata.project_id);
+    ffStatusBar.updateProjectAndBranch(metadata.project_id, metadata.branch_name);
 
     if (!projectState) {
       const projectDirectory = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
