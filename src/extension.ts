@@ -198,7 +198,6 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         const apiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), projectId, branchName);
         const syncCodeResult = await pushToFF(apiClient, projectRoot, currentUpdateManager, requestId);
 
-        vscode.window.showInformationMessage("Push to FlutterFlow completed.");
 
         // Handle sync results
         if (syncCodeResult.error) {
@@ -209,6 +208,9 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         if (!hasCriticalErrors) {
           await currentUpdateManager.setToSynced();
           modifiedFileTreeProvider.clearAllFiles();
+          vscode.window.showInformationMessage("Push to FlutterFlow completed.");
+        } else {
+          vscode.window.showErrorMessage("Push to FlutterFlow failed. View FlutterFlow warnings panel for details.");
         }
       });
     }
