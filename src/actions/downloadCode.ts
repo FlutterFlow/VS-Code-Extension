@@ -1,6 +1,6 @@
 import { FlutterFlowApiClient } from "../api/FlutterFlowApiClient";
 import { insertCustomFunctionBoilerplate } from "../fileUtils/addBoilerplate";
-import { ffMetadataFromFile, ffMetadataToFile } from "../ffState/FlutterFlowMetadata";
+import { ffMetadataFromFile, ffMetadataToFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
 import { deserializeUpdateManager, UpdateManager } from "../ffState/UpdateManager";
 import { getCurrentApiUrl } from "../api/environment";
 import * as path from "path";
@@ -89,9 +89,10 @@ export interface DownloadCodeArgs {
     downloadLocation?: string;
     branchName?: string;
     skipOpen?: boolean;
+    activeFile?: string;
 }
 
-export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{projectId: string, projectPath: string} | undefined> {
+export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{ projectId: string, projectPath: string } | undefined> {
     // Read project id from existing data and prompt user if not found.
     let projectId;
     if (args.projectId) {
@@ -196,6 +197,9 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             }
 
             const updateManager = await downloadCode(projectPath, new FlutterFlowApiClient(token, getCurrentApiUrl(), projectId, branchName));
+            if (args.activeFile) {
+                await setInitialFile(projectPath, args.activeFile);
+            }
 
             // context.globalState.update("downloadsPath", projectPath);
             // context.globalState.update("projectId", projectId);
