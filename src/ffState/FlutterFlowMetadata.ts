@@ -9,6 +9,7 @@ export type FlutterFlowMetadata = {
     };
     project_id: string;
     branch_name: string;
+    initial_file?: string;
 }
 
 
@@ -37,4 +38,19 @@ export async function writeFFMetadataFromContext(context: vscode.ExtensionContex
         const projectPath = workspaceFolders[0].uri.fsPath;
         await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
     }
+}
+
+export async function setInitialFile(projectPath: string, activeFilePath: string) {
+    const metadata = ffMetadataFromFile(path.join(projectPath, "ff_metadata.json"));
+    metadata.initial_file = activeFilePath;
+    await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
+}
+
+export async function getInitialFile(projectPath: string) {
+    const metadata = ffMetadataFromFile(path.join(projectPath, "ff_metadata.json"));
+    const initialFile = metadata.initial_file;
+    // clear the initial file
+    metadata.initial_file = undefined;
+    await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
+    return initialFile;
 }
