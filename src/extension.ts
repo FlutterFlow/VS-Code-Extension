@@ -1,5 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 import * as vscode from "vscode";
+import * as fs from "fs";
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
 import { UpdateManager } from "./ffState/UpdateManager";
@@ -13,6 +14,7 @@ import { performPullLatest } from "./actions/pullLatest";
 import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProjectState";
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
 import { FlutterFlowMetadata } from "./ffState/FlutterFlowMetadata";
+import path from "path";
 
 // Pattern for watching custom code files
 const kCustomFilePattern = `**/{pubspec.yaml,lib/custom_code/**,lib/flutter_flow/custom_functions.dart}`;
@@ -32,6 +34,56 @@ let projectMetadata: FlutterFlowMetadata | null = null;
  * Sets up commands, UI components, and file watchers
  */
 export function activate(context: vscode.ExtensionContext): vscode.ExtensionContext {
+  // Register URI handler
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri): vscode.ProviderResult<void> {
+        // Parse all parameters from query string
+        // Expected format: vscode://flutterflow.custom-code-editor?projectId={projectId}&branch={branchId}&fileName={fileName}
+        const params = new URLSearchParams(uri.query);
+        const projectId = params.get('projectId');
+        if (!projectId) {
+          vscode.window.showErrorMessage('Invalid FlutterFlow URI format: missing projectId');
+          return;
+        }
+
+        const branchId = params.get('branch') || 'main';
+        const fileName = params.get('fileName') || '';
+
+        //get download path from settings
+        const downloadPath = vscode.workspace.getConfiguration('flutterflow').get('downloadLocation') as (string | undefined) || '';
+
+        //check if the download path is a valid directory
+        if (!fs.existsSync(downloadPath)) {
+          vscode.window.showErrorMessage('Invalid download path');
+          return;
+        }
+        // check if download path plus projectid exists
+        const projectDownloadPath = path.join(downloadPath, projectId);
+        if (!fs.existsSync(projectDownloadPath)) {
+          vscode.window.showErrorMessage('Invalid download path');
+          return;
+        }
+
+        // add a popup asking the user to confirm the download or if they just want to open the project directory
+        const confirmDownload = await vscode.window.showInformationMessage('Download and overwrite existing project? Or just open the project directory?', 'Download and overwrite', 'Open Project Directory');
+        if (confirmDownload === 'Download and overwrite') {
+          // Execute the download command with the parsed parameters
+          return vscode.commands.executeCommand('flutterflow-download', {
+            projectId,
+            branchName: branchId,
+            fileName
+          });
+        } else {
+          // open the project directory
+          vscode.env.openExternal(vscode.Uri.parse(projectDownloadPath));
+        }
+      }
+    })
+  );
+
+
+
   // Register UI components
   context.subscriptions.push(ffStatusBar);
   vscode.window.registerTreeDataProvider("fileListTreeView", modifiedFileTreeProvider);

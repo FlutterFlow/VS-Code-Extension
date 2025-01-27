@@ -18,7 +18,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onUri"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -45,6 +47,10 @@
       {
         "command": "modifiedFiles.onClick",
         "title": "On select item"
+      },
+      {
+        "command": "flutterflow.handleUri",
+        "title": "Handle FlutterFlow URI"
       }
     ],
     "configuration": {
