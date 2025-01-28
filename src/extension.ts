@@ -37,19 +37,24 @@ async function checkRequiredFiles(): Promise<boolean> {
   const rootUri = workspaceFolders[0].uri;
 
   try {
-    // Check for pubspec.yaml
+    // Check for pubspec.yaml and verify it's a FlutterFlow project
     const pubspecPath = vscode.Uri.joinPath(rootUri, 'pubspec.yaml');
-    await vscode.workspace.fs.stat(pubspecPath);
+    const pubspecStat = await vscode.workspace.fs.stat(pubspecPath);
+    if (!pubspecStat.size || pubspecStat.size === 0) {
+      return false;
+    }
 
-    // Check for .vscode/ff_metadata.json
+    // Check for .vscode/ff_metadata.json and verify it's readable
     const metadataPath = vscode.Uri.joinPath(rootUri, '.vscode', 'ff_metadata.json');
-    await vscode.workspace.fs.stat(metadataPath);
+    const metadataContent = await vscode.workspace.fs.readFile(metadataPath);
+    const metadata = JSON.parse(new TextDecoder().decode(metadataContent));
 
-    return true;
+    return !!(metadata.project_id); // Ensure we have a project ID
   } catch (error) {
+    console.log('checkRequiredFiles error:', error);
     return false;
   }
-};
+}
 
 /**
  * Extension activation point - called when extension is activated
@@ -154,21 +159,35 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     initCodeEditorFn
   );
 
-  checkRequiredFiles().then((result) => {
-    // check to see if the extension has been activated in a flutterflow project.
-    // If so, initialize the code editor
-    if (result) {
-      getInitialFile(vscode.workspace.workspaceFolders?.[0].uri.fsPath || "").then((initialFile) => {
-        if (initialFile) {
+  // Modify the initialization sequence
+  checkRequiredFiles().then(async (isFlutterFlowProject) => {
+    if (!isFlutterFlowProject) {
+      return; // Exit if not a FlutterFlow project
+    }
 
-          const projectPath = vscode.workspace.workspaceFolders?.[0].uri.fsPath || "";
-          if (projectPath == "") return;
+    try {
+      const projectPath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+      if (!projectPath) {
+        throw new Error('No workspace folder found');
+      }
 
-          vscode.workspace.openTextDocument(path.join(projectPath, initialFile)).then((doc) => {
-            vscode.window.showTextDocument(doc);
-          });
+      // Then handle initial file opening first
+      const initialFile = await getInitialFile(projectPath);
+      if (initialFile) {
+        const fullPath = path.join(projectPath, initialFile);
+
+        // Verify file exists before attempting to open
+        if (fs.existsSync(fullPath)) {
+          const doc = await vscode.workspace.openTextDocument(fullPath);
+          await vscode.window.showTextDocument(doc);
         }
-      }).then(initCodeEditorFn);
+      }
+
+      // Initialize the code editor
+      await initCodeEditorFn();
+    } catch (error) {
+      console.error('Initialization error:', error);
+      vscode.window.showErrorMessage(`Failed to initialize FlutterFlow project: ${error}`);
     }
   });
 
@@ -307,43 +326,54 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
 
         const openProject = async () => {
           try {
-            if (!projectDownloadPathExists) {
-              // download the project
-              await downloadCodeWithPrompt(context, {
-                projectId,
-                branchName: branchName,
-                downloadLocation: downloadPath,
-                initialFile: fileName
-              });
-            }
-            // add a popup asking the user to confirm the download or if they just want to open the project directory
-            const confirmDownload = await vscode.window.showInformationMessage('Download and overwrite existing project? Or just open the project directory that already exists?', { modal: true }, 'Download and overwrite', 'Open Existing Project');
-            if (confirmDownload === 'Download and overwrite') {
-              // Execute the download command with the parsed parameters
-              // download the project
-              await downloadCodeWithPrompt(context, {
-                projectId,
-                branchName: branchName,
-                downloadLocation: downloadPath,
-                initialFile: fileName
-              });
+            const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const projectDownloadPath = path.join(downloadPath, projectId);
 
-            } else if (confirmDownload === 'Open Existing Project') {
-              const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-              if (currentWorkspacePath == projectDownloadPath) {
-                // if the project is already open, just open the initial file
-                vscode.workspace.openTextDocument(path.join(projectDownloadPath, fileName)).then((doc) => {
-                  vscode.window.showTextDocument(doc);
-                });
-              } else {
-                await setInitialFile(projectDownloadPath, fileName)
-                // open the project directory
-                await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(projectDownloadPath));
+            // If project is already open in current workspace
+            if (currentWorkspacePath === projectDownloadPath) {
+              if (fileName) {
+                const fullPath = path.join(projectDownloadPath, fileName);
+                if (fs.existsSync(fullPath)) {
+                  const doc = await vscode.workspace.openTextDocument(fullPath);
+                  await vscode.window.showTextDocument(doc);
+                }
+              }
+              // Ensure editor is initialized
+              await initCodeEditorFn();
+              return;
+            }
+
+            // Project exists but isn't open
+            if (projectDownloadPathExists) {
+              const choice = await vscode.window.showInformationMessage(
+                'Project already exists locally. What would you like to do?',
+                { modal: true },
+                'Open Existing',
+                'Download Fresh Copy'
+              );
+
+              if (choice === 'Open Existing') {
+                if (fileName) {
+                  await setInitialFile(projectDownloadPath, fileName);
+                }
+                await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(projectDownloadPath));
+                return;
+              } else if (!choice) {
+                return; // User cancelled
               }
             }
+
+            // Download new copy
+            await downloadCodeWithPrompt(context, {
+              projectId,
+              branchName,
+              downloadLocation: downloadPath,
+              initialFile: fileName
+            });
+
           } catch (err) {
-            console.error('handleUrif:openProject error', err);
-            vscode.window.showErrorMessage(`Error opening project from URL. ${err}`);
+            console.error('handleUri:openProject error', err);
+            vscode.window.showErrorMessage(`Error opening project from URL: ${err}`);
           }
         };
 
