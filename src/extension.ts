@@ -1,6 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
+
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
 import { UpdateManager } from "./ffState/UpdateManager";
@@ -13,7 +15,7 @@ import { pushToFF } from "./actions/pushToFF";
 import { performPullLatest } from "./actions/pullLatest";
 import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProjectState";
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
-import { FlutterFlowMetadata, getInitialFile } from "./ffState/FlutterFlowMetadata";
+import { FlutterFlowMetadata, getInitialFile, setInitialFile } from "./ffState/FlutterFlowMetadata";
 
 // Pattern for watching custom code files
 const kCustomFilePattern = `**/{pubspec.yaml,lib/custom_code/**,lib/flutter_flow/custom_functions.dart}`;
@@ -56,6 +58,8 @@ async function checkRequiredFiles(): Promise<boolean> {
 export function activate(context: vscode.ExtensionContext): vscode.ExtensionContext {
   // Register UI components
   console.log('RYANDEBUG:activating extension');
+
+
   context.subscriptions.push(ffStatusBar);
   vscode.window.registerTreeDataProvider("fileListTreeView", modifiedFileTreeProvider);
   const treeView = vscode.window.createTreeView("fileListTreeView", {
@@ -96,7 +100,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
       try {
         const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         // RYANDEBUG test
-        args.activeFile = path.join('lib', 'custom_code', 'actions', 'index.dart');
+        args.initialFile = path.join('lib', 'custom_code', 'actions', 'index.dart');
         const projectConfigs = await downloadCodeWithPrompt(context, args);
         if (!projectConfigs) {
           return;
@@ -272,6 +276,84 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         }
       );
     }
+  );
+
+  // Register URI handler
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri): vscode.ProviderResult<void> {
+        console.log('RYANDEBUG:handleUri', uri);
+        // Parse all parameters from query string
+        // Expected format: vscode://flutterflow.custom-code-editor?projectId={projectId}&branchName={branchId}&fileName={fileName}
+        const params = new URLSearchParams(uri.query);
+        const projectId = params.get('projectId');
+        if (!projectId) {
+          vscode.window.showErrorMessage('Invalid FlutterFlow URI format: missing projectId');
+          return;
+        }
+
+        const branchName = params.get('branchName') || 'main';
+        const fileName = params.get('fileName') || '';
+
+        //get download path from settings
+        const downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
+        console.log('RYANDEBUG:downloadPath', downloadPath);
+
+        //check if the download path is a valid directory
+        if (!fs.existsSync(downloadPath)) {
+          vscode.window.showErrorMessage(`Invalid download path. ${downloadPath} does not exist.`);
+          return;
+        }
+        // check if download path plus projectid exists
+        const projectDownloadPath = path.join(downloadPath, projectId);
+        const projectDownloadPathExists = fs.existsSync(projectDownloadPath);
+
+        const openProject = async () => {
+          try {
+            if (!projectDownloadPathExists) {
+              // download the project
+              await downloadCodeWithPrompt(context, {
+                projectId,
+                branchName: branchName,
+                downloadLocation: downloadPath,
+                initialFile: fileName
+              });
+            }
+            // add a popup asking the user to confirm the download or if they just want to open the project directory
+            const confirmDownload = await vscode.window.showInformationMessage('Download and overwrite existing project? Or just open the project directory?', 'Download and overwrite', 'Open Project Directory');
+            if (confirmDownload === 'Download and overwrite') {
+              // Execute the download command with the parsed parameters
+              // download the project
+              await downloadCodeWithPrompt(context, {
+                projectId,
+                branchName: branchName,
+                downloadLocation: downloadPath,
+                initialFile: fileName
+              });
+
+            } else {
+              const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+              if (currentWorkspacePath == projectDownloadPath) {
+                // if the project is already open, just open the initial file
+                vscode.workspace.openTextDocument(path.join(projectDownloadPath, fileName)).then((doc) => {
+                  vscode.window.showTextDocument(doc);
+                });
+              } else {
+                await setInitialFile(projectDownloadPath, fileName)
+                // open the project directory
+                await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(projectDownloadPath));
+              }
+            }
+          } catch (err) {
+            console.error('handleUrif:openProject error', err);
+            vscode.window.showErrorMessage(`Error opening project from URL. ${err}`);
+          }
+        };
+
+        // unawaited promise to open the project
+        return openProject();
+      }
+    })
   );
 
   // Handle file rename events
