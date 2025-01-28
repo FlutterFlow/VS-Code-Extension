@@ -317,7 +317,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
               });
             }
             // add a popup asking the user to confirm the download or if they just want to open the project directory
-            const confirmDownload = await vscode.window.showInformationMessage('Download and overwrite existing project? Or just open the project directory?', 'Download and overwrite', 'Open Project Directory');
+            const confirmDownload = await vscode.window.showInformationMessage('Download and overwrite existing project? Or just open the project directory that already exists?', { modal: true }, 'Download and overwrite', 'Open Existing Project');
             if (confirmDownload === 'Download and overwrite') {
               // Execute the download command with the parsed parameters
               // download the project
@@ -328,7 +328,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
                 initialFile: fileName
               });
 
-            } else {
+            } else if (confirmDownload === 'Open Existing Project') {
               const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
               if (currentWorkspacePath == projectDownloadPath) {
                 // if the project is already open, just open the initial file
