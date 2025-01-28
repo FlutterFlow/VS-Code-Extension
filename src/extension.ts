@@ -57,8 +57,7 @@ async function checkRequiredFiles(): Promise<boolean> {
  */
 export function activate(context: vscode.ExtensionContext): vscode.ExtensionContext {
   // Register UI components
-  console.log('RYANDEBUG:activating extension');
-
+  console.log('activating FlutterFlow Custom Code Editor extension');
 
   context.subscriptions.push(ffStatusBar);
   vscode.window.registerTreeDataProvider("fileListTreeView", modifiedFileTreeProvider);
@@ -99,8 +98,6 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     async (args: DownloadCodeArgs = {}) => {
       try {
         const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        // RYANDEBUG test
-        args.initialFile = path.join('lib', 'custom_code', 'actions', 'index.dart');
         const projectConfigs = await downloadCodeWithPrompt(context, args);
         if (!projectConfigs) {
           return;
@@ -282,7 +279,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       handleUri(uri: vscode.Uri): vscode.ProviderResult<void> {
-        console.log('RYANDEBUG:handleUri', uri);
+        console.log('opening project from URI ', uri);
         // Parse all parameters from query string
         // Expected format: vscode://flutterflow.custom-code-editor?projectId={projectId}&branchName={branchId}&fileName={fileName}
         const params = new URLSearchParams(uri.query);
@@ -295,9 +292,9 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         const branchName = params.get('branchName') || 'main';
         const fileName = params.get('fileName') || '';
 
-        //get download path from settings
+        // Get download path from settings.
+        // TODO: should we assume this download path or prompt the user for it like the normal download flow?
         const downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
-        console.log('RYANDEBUG:downloadPath', downloadPath);
 
         //check if the download path is a valid directory
         if (!fs.existsSync(downloadPath)) {
