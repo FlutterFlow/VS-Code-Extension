@@ -89,7 +89,7 @@ export interface DownloadCodeArgs {
     downloadLocation?: string;
     branchName?: string;
     skipOpen?: boolean;
-    activeFile?: string;
+    initialFile?: string;
 }
 
 export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{ projectId: string, projectPath: string } | undefined> {
@@ -197,8 +197,8 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             }
 
             const updateManager = await downloadCode(projectPath, new FlutterFlowApiClient(token, getCurrentApiUrl(), projectId, branchName));
-            if (args.activeFile) {
-                await setInitialFile(projectPath, args.activeFile);
+            if (args.initialFile) {
+                await setInitialFile(projectPath, args.initialFile);
             }
 
             // context.globalState.update("downloadsPath", projectPath);
