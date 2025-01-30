@@ -311,23 +311,72 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         const branchName = params.get('branchName') || 'main';
         const fileName = params.get('fileName') || '';
 
-        // Get download path from settings.
-        // TODO: should we assume this download path or prompt the user for it like the normal download flow?
-        const downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
-
-        //check if the download path is a valid directory
-        if (!fs.existsSync(downloadPath)) {
-          vscode.window.showErrorMessage(`Invalid download path. ${downloadPath} does not exist.`);
-          return;
-        }
-        // check if download path plus projectid exists
-        const projectDownloadPath = path.join(downloadPath, projectId);
-        const projectDownloadPathExists = fs.existsSync(projectDownloadPath);
-
         const openProject = async () => {
           try {
-            const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            // Check if API key is configured
+            const apiKey = getApiKey();
+            if (!apiKey) {
+              const setApiKey = await vscode.window.showInformationMessage(
+                'FlutterFlow API key not found. Would you like to set it now?',
+                { modal: true },
+                'Yes', 'No'
+              );
+              if (setApiKey === 'Yes') {
+                const key = await vscode.window.showInputBox({
+                  prompt: 'Enter your FlutterFlow API key',
+                  password: true,
+                  ignoreFocusOut: true
+                });
+                if (key) {
+                  await vscode.workspace.getConfiguration('flutterflow').update('userApiToken', key, true);
+                } else {
+                  return;
+                }
+              } else {
+                return;
+              }
+            }
+
+            // Check if download location is configured
+            const downloadLocation = vscode.workspace.getConfiguration('flutterflow').get<string>('downloadLocation');
+            if (!downloadLocation) {
+              const setLocation = await vscode.window.showInformationMessage(
+                'FlutterFlow download location not set. Would you like to set it now?',
+                { modal: true },
+                'Yes', 'No',
+              );
+              if (setLocation === 'Yes') {
+                const uris = await vscode.window.showOpenDialog({
+                  canSelectFiles: false,
+                  canSelectFolders: true,
+                  canSelectMany: false,
+                  title: 'Select Download Location'
+                });
+                if (uris && uris[0]) {
+                  await vscode.workspace.getConfiguration('flutterflow').update('downloadLocation', uris[0].fsPath, true);
+                } else {
+                  return;
+                }
+              } else {
+                return;
+              }
+            }
+
+
+            // Get download path from settings.
+            // TODO: should we assume this download path or prompt the user for it like the normal download flow?
+            const downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
+
+            //check if the download path is a valid directory
+            if (!fs.existsSync(downloadPath)) {
+              vscode.window.showErrorMessage(`Invalid download path. ${downloadPath} does not exist.`);
+              return;
+            }
+            // check if download path plus projectid exists
             const projectDownloadPath = path.join(downloadPath, projectId);
+            const projectDownloadPathExists = fs.existsSync(projectDownloadPath);
+
+            const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
             // If project is already open in current workspace
             if (currentWorkspacePath === projectDownloadPath) {
