@@ -12,9 +12,6 @@ export async function handleFlutterFlowUri(
 ): Promise<void> {
 
     console.log('opening project from URI ', uri);
-    if (1 > 0) {
-        return;
-    }
     // Parse all parameters from query string
     // Expected format: vscode://flutterflow.custom-code-editor?projectId={projectId}&branchName={branchId}&fileName={fileName}
     const params = new URLSearchParams(uri.query);
