@@ -52,7 +52,7 @@
       "properties": {
         "flutterflow.userApiToken": {
           "type": "string",
-          "description": "Your FlutterFlow API Token. You can find it on your API token in your flutteflow account page."
+          "description": "Your FlutterFlow API Token. You can find your API token in your FlutterFlow account page."
         },
         "flutterflow.downloadLocation": {
           "type": "string",
@@ -65,7 +65,7 @@
         },
         "flutterflow.branchName": {
           "type": "string",
-          "description": "Branch name of your flutterflow project to download (leave blank for 'main')."
+          "description": "Branch name of your FlutterFlow project to download (leave blank for 'main')."
         },
         "flutterflow.urlOverride": {
           "type": [
