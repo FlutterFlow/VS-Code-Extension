@@ -89,19 +89,6 @@ export async function handleFlutterFlowUri(
 
         const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-        // If project is already open in current workspace
-        if (currentWorkspacePath === projectDownloadPath) {
-            if (fileName) {
-                const fullPath = path.join(projectDownloadPath, fileName);
-                if (fs.existsSync(fullPath)) {
-                    const doc = await vscode.workspace.openTextDocument(fullPath);
-                    await vscode.window.showTextDocument(doc);
-                }
-            }
-            // Ensure editor is initialized
-            await initializeCodeEditorWithVscode();
-            return;
-        }
 
         // Project exists but isn't open
         if (projectDownloadPathExists) {
@@ -113,6 +100,20 @@ export async function handleFlutterFlowUri(
             );
 
             if (choice === 'Open Existing') {
+                // If project is already open in current workspace
+                if (currentWorkspacePath === projectDownloadPath) {
+                    if (fileName) {
+                        const fullPath = path.join(projectDownloadPath, fileName);
+                        if (fs.existsSync(fullPath)) {
+                            const doc = await vscode.workspace.openTextDocument(fullPath);
+                            await vscode.window.showTextDocument(doc);
+                        }
+                    }
+                    // Ensure editor is initialized
+                    await initializeCodeEditorWithVscode();
+                    return;
+                }
+                // if the project is not open in the current workspace, open it
                 if (fileName) {
                     await setInitialFile(projectDownloadPath, fileName);
                 }
