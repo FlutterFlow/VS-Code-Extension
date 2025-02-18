@@ -98,7 +98,7 @@ export async function handleFlutterFlowUri(
                 'Project already exists locally. What would you like to do?',
                 { modal: true },
                 'Open Existing',
-                'Download Fresh Copy'
+                'Download From FlutterFlow'
             );
 
             if (choice === 'Open Existing') {
