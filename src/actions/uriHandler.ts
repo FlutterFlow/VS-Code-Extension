@@ -23,6 +23,8 @@ export async function handleFlutterFlowUri(
 
     const branchName = params.get('branchName') || 'main';
     const fileName = params.get('fileName') || '';
+    // Convert unix-style path separators to platform-specific separators
+    const normalizedFileName = fileName.split('/').join(path.sep);
 
     try {
         // Check if API key is configured
@@ -103,7 +105,7 @@ export async function handleFlutterFlowUri(
                 // If project is already open in current workspace
                 if (currentWorkspacePath === projectDownloadPath) {
                     if (fileName) {
-                        const fullPath = path.join(projectDownloadPath, fileName);
+                        const fullPath = path.join(projectDownloadPath, normalizedFileName);
                         if (fs.existsSync(fullPath)) {
                             const doc = await vscode.workspace.openTextDocument(fullPath);
                             await vscode.window.showTextDocument(doc);
@@ -115,7 +117,7 @@ export async function handleFlutterFlowUri(
                 }
                 // if the project is not open in the current workspace, open it
                 if (fileName) {
-                    await setInitialFile(projectDownloadPath, fileName);
+                    await setInitialFile(projectDownloadPath, normalizedFileName);
                 }
                 await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(projectDownloadPath));
                 return;
@@ -129,7 +131,7 @@ export async function handleFlutterFlowUri(
             projectId,
             branchName,
             downloadLocation: downloadPath,
-            initialFile: fileName
+            initialFile: normalizedFileName
         });
 
     } catch (err) {
