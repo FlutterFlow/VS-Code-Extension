@@ -4,7 +4,7 @@ import * as fs from "fs";
 import { getApiKey } from "../api/environment";
 import { downloadCodeWithPrompt } from "./downloadCode";
 import { initializeCodeEditorWithVscode } from "./initializeCodeEditor";
-import { setInitialFile } from "../ffState/FlutterFlowMetadata";
+import { ffMetadataFromFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
 
 export async function handleFlutterFlowUri(
     uri: vscode.Uri,
@@ -91,9 +91,36 @@ export async function handleFlutterFlowUri(
 
         const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-
         // Project exists but isn't open
         if (projectDownloadPathExists) {
+            // check metadata file
+            const metadataFilePath = path.join(projectDownloadPath, 'ff_metadata.json');
+            const metadataFileExists = fs.existsSync(metadataFilePath);
+            if (metadataFileExists) {
+                const metadata = ffMetadataFromFile(metadataFilePath);
+                if (metadata.branch_name !== branchName) {
+                    // currently downloaded branch is different than the branch name in the uri
+                    // so we need to download the project again
+                    const branchChoice = await vscode.window.showInformationMessage(
+                        'Local branch is different than the branch name in the uri. Would you like to overwrite the project directory with code from branch ' + branchName + '?',
+                        { modal: true },
+                        'Yes',
+                        'No'
+                    );
+                    if (branchChoice === 'Yes') {
+                        await downloadCodeWithPrompt(context, {
+                            projectId,
+                            branchName,
+                            downloadLocation: downloadPath,
+                            initialFile: normalizedFileName
+                        });
+                        return;
+                    } else {
+                        return;
+                    }
+                }
+            }
+
             const choice = await vscode.window.showInformationMessage(
                 'Project already exists locally. What would you like to do?',
                 { modal: true },
