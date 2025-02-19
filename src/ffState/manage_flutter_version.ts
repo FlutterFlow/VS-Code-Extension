@@ -53,7 +53,7 @@ export async function installFlutterIfNeeded(targetVersion: string, getVersionFn
         }
     } else {
         const downloadPromptResult = await vscode.window.showInformationMessage(
-            `Flutter SDK will be installed to ${downloadLocation}/ff_flutter_sdk Proceed?`,
+            `Flutter SDK will be installed to ${downloadLocation}${path.sep}ff_flutter_sdk Proceed?`,
             { modal: true },
             "Yes",
             "Select Different Download Location",

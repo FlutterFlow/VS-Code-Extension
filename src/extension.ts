@@ -173,18 +173,6 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         throw new Error('No workspace folder found');
       }
 
-      // Then handle initial file opening first
-      const initialFile = await getInitialFile(projectPath);
-      if (initialFile) {
-        const fullPath = path.join(projectPath, initialFile);
-
-        // Verify file exists before attempting to open
-        if (fs.existsSync(fullPath)) {
-          const doc = await vscode.workspace.openTextDocument(fullPath);
-          await vscode.window.showTextDocument(doc);
-        }
-      }
-
       // Initialize the code editor
       await initCodeEditorFn();
     } catch (error) {

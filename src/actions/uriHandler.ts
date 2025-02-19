@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { getApiKey } from "../api/environment";
 import { downloadCodeWithPrompt, verifyDownloadLocation } from "./downloadCode";
-import { FF_METADATA_FILE_PATH, ffMetadataFromFile } from "../ffState/FlutterFlowMetadata";
+import { FF_METADATA_FILE_PATH, ffMetadataFromFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
 
 export async function handleFlutterFlowUri(
     uri: vscode.Uri,
@@ -113,10 +113,11 @@ export async function handleFlutterFlowUri(
         }
 
         if (overwriteProjectChoice === 'Open Existing') {
+            const fullPath = path.join(projectDownloadPath, normalizedFileName);
+
             if (currentWorkspacePath === projectDownloadPath) {
                 // If project is already open in current workspace
                 if (fileName) {
-                    const fullPath = path.join(projectDownloadPath, normalizedFileName);
                     if (fs.existsSync(fullPath)) {
                         const doc = await vscode.workspace.openTextDocument(fullPath);
                         await vscode.window.showTextDocument(doc);
@@ -125,6 +126,7 @@ export async function handleFlutterFlowUri(
                 return false;
             } else {
                 // If project is not open in current workspace, open it
+                await setInitialFile(projectDownloadPath, normalizedFileName);
                 await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(projectDownloadPath));
                 return false;
             }
