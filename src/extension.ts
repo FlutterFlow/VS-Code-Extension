@@ -15,7 +15,7 @@ import { pushToFF } from "./actions/pushToFF";
 import { performPullLatest } from "./actions/pullLatest";
 import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProjectState";
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
-import { FlutterFlowMetadata, getInitialFile, setInitialFile } from "./ffState/FlutterFlowMetadata";
+import { FlutterFlowMetadata, getInitialFile } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
 
 // Pattern for watching custom code files
@@ -161,6 +161,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
   );
 
   // Modify the initialization sequence
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
   checkRequiredFiles().then(async (isFlutterFlowProject) => {
     if (!isFlutterFlowProject) {
       return; // Exit if not a FlutterFlow project
