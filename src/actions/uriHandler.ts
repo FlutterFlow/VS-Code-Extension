@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import { getApiKey } from "../api/environment";
-import { downloadCodeWithPrompt } from "./downloadCode";
+import { downloadCodeWithPrompt, verifyDownloadLocation } from "./downloadCode";
 import { FF_METADATA_FILE_PATH, ffMetadataFromFile } from "../ffState/FlutterFlowMetadata";
 
 export async function handleFlutterFlowUri(
@@ -52,7 +52,8 @@ export async function handleFlutterFlowUri(
 
         // Check if download location is configured
         const downloadLocation = vscode.workspace.getConfiguration('flutterflow').get<string>('downloadLocation');
-        if (!downloadLocation) {
+        //check if the download location is valid
+        if (!downloadLocation || !verifyDownloadLocation(downloadLocation)) {
             const setLocation = await vscode.window.showInformationMessage(
                 'FlutterFlow download location not set. Would you like to set it now?',
                 { modal: true },

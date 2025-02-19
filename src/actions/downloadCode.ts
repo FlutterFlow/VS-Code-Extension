@@ -216,3 +216,27 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
     });
     return { projectId, projectPath };
 };
+
+export async function verifyDownloadLocation(downloadPath: string): Promise<boolean> {
+    try {
+        // Check if path exists
+        if (!fs.existsSync(downloadPath)) {
+            return false;
+        }
+
+        // Check if it's a directory
+        const stats = await fs.promises.stat(downloadPath);
+        if (!stats.isDirectory()) {
+            return false;
+        }
+
+        // Check if we have write permissions
+        await fs.promises.access(downloadPath, fs.constants.W_OK);
+
+        return true;
+    } catch (error) {
+        console.error(`Error verifying download location: ${error}`);
+        return false;
+    }
+}
+
