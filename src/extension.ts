@@ -15,7 +15,7 @@ import { pushToFF } from "./actions/pushToFF";
 import { performPullLatest } from "./actions/pullLatest";
 import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProjectState";
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
-import { FlutterFlowMetadata, getInitialFile } from "./ffState/FlutterFlowMetadata";
+import { FlutterFlowMetadata, getInitialFile, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
 
 // Pattern for watching custom code files
@@ -46,7 +46,7 @@ async function checkRequiredFiles(): Promise<boolean> {
     }
 
     // Check for .vscode/ff_metadata.json and verify it's readable
-    const metadataPath = vscode.Uri.joinPath(rootUri, '.vscode', 'ff_metadata.json');
+    const metadataPath = vscode.Uri.joinPath(rootUri, FF_METADATA_FILE_PATH);
     const metadataContent = await vscode.workspace.fs.readFile(metadataPath);
     const metadata = JSON.parse(new TextDecoder().decode(metadataContent));
 
@@ -301,7 +301,11 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     vscode.window.registerUriHandler({
       handleUri(uri: vscode.Uri): vscode.ProviderResult<void> {
         try {
-          return handleFlutterFlowUri(uri, context);
+          return handleFlutterFlowUri(uri, context).then((shouldReinitializeCurrentWorkspace) => {
+            if (shouldReinitializeCurrentWorkspace) {
+              initCodeEditorFn();
+            }
+          });
         } catch (err) {
           console.error('Error handling FlutterFlow URI:', err);
           vscode.window.showErrorMessage(`Error handling FlutterFlow URI: ${err}`);

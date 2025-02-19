@@ -12,6 +12,7 @@ export type FlutterFlowMetadata = {
     initial_file?: string;
 }
 
+export const FF_METADATA_FILE_PATH = path.join('.vscode', 'ff_metadata.json');
 
 export function ffMetadataFromFile(filePath: string): FlutterFlowMetadata {
     if (!fs.existsSync(filePath)) {
@@ -28,29 +29,17 @@ export async function ffMetadataToFile(filePath: string, metadata: FlutterFlowMe
     await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2));
 }
 
-export async function writeFFMetadataFromContext(context: vscode.ExtensionContext): Promise<void> {
-    const metadata = {
-        project_id: context.globalState.get("projectId") as string,
-        branch_name: context.globalState.get("branchName") as string
-    };
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders) {
-        const projectPath = workspaceFolders[0].uri.fsPath;
-        await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
-    }
-}
-
 export async function setInitialFile(projectPath: string, activeFilePath: string) {
-    const metadata = ffMetadataFromFile(path.join(projectPath, "ff_metadata.json"));
+    const metadata = ffMetadataFromFile(path.join(projectPath, FF_METADATA_FILE_PATH));
     metadata.initial_file = activeFilePath;
-    await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
+    await ffMetadataToFile(path.join(projectPath, FF_METADATA_FILE_PATH), metadata);
 }
 
 export async function getInitialFile(projectPath: string) {
-    const metadata = ffMetadataFromFile(path.join(projectPath, "ff_metadata.json"));
+    const metadata = ffMetadataFromFile(path.join(projectPath, FF_METADATA_FILE_PATH));
     const initialFile = metadata.initial_file;
     // clear the initial file
     metadata.initial_file = undefined;
-    await ffMetadataToFile(path.join(projectPath, "ff_metadata.json"), metadata);
+    await ffMetadataToFile(path.join(projectPath, FF_METADATA_FILE_PATH), metadata);
     return initialFile;
 }

@@ -3,13 +3,12 @@ import * as path from "path";
 import * as fs from "fs";
 import { getApiKey } from "../api/environment";
 import { downloadCodeWithPrompt } from "./downloadCode";
-import { initializeCodeEditorWithVscode } from "./initializeCodeEditor";
-import { ffMetadataFromFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
+import { FF_METADATA_FILE_PATH, ffMetadataFromFile } from "../ffState/FlutterFlowMetadata";
 
 export async function handleFlutterFlowUri(
     uri: vscode.Uri,
     context: vscode.ExtensionContext
-): Promise<void> {
+): Promise<boolean> {
 
     console.log('opening project from URI ', uri);
     // Parse all parameters from query string
@@ -18,7 +17,7 @@ export async function handleFlutterFlowUri(
     const projectId = params.get('projectId');
     if (!projectId) {
         vscode.window.showErrorMessage('Invalid FlutterFlow URI format: missing projectId');
-        return;
+        return false;
     }
 
     const branchName = params.get('branchName') || 'main';
@@ -44,10 +43,10 @@ export async function handleFlutterFlowUri(
                 if (key) {
                     await vscode.workspace.getConfiguration('flutterflow').update('userApiToken', key, true);
                 } else {
-                    return;
+                    return false;
                 }
             } else {
-                return;
+                return false;
             }
         }
 
@@ -69,10 +68,10 @@ export async function handleFlutterFlowUri(
                 if (uris && uris[0]) {
                     await vscode.workspace.getConfiguration('flutterflow').update('downloadLocation', uris[0].fsPath, true);
                 } else {
-                    return;
+                    return false;
                 }
             } else {
-                return;
+                return false;
             }
         }
 
@@ -82,7 +81,7 @@ export async function handleFlutterFlowUri(
         //check if the download path is a valid directory
         if (!fs.existsSync(downloadPath)) {
             vscode.window.showErrorMessage(`Invalid download path. ${downloadPath} does not exist.`);
-            return;
+            return false;
         }
 
         // check if download path plus projectid exists
@@ -90,79 +89,65 @@ export async function handleFlutterFlowUri(
         const projectDownloadPathExists = fs.existsSync(projectDownloadPath);
 
         const currentWorkspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!projectDownloadPathExists) {
+            // Project doesn't exist, so we need to download it
+            await downloadCodeWithPrompt(context, {
+                projectId,
+                branchName,
+                downloadLocation: downloadPath,
+                initialFile: normalizedFileName
+            });
+            return true;
+        }
 
         // Project exists but isn't open
-        if (projectDownloadPathExists) {
-            // check metadata file
-            const metadataFilePath = path.join(projectDownloadPath, 'ff_metadata.json');
-            const metadataFileExists = fs.existsSync(metadataFilePath);
-            if (metadataFileExists) {
-                const metadata = ffMetadataFromFile(metadataFilePath);
-                if (metadata.branch_name !== branchName) {
-                    // currently downloaded branch is different than the branch name in the uri
-                    // so we need to download the project again
-                    const branchChoice = await vscode.window.showInformationMessage(
-                        'Local branch is different than the branch name in the uri. Would you like to overwrite the project directory with code from branch ' + branchName + '?',
-                        { modal: true },
-                        'Yes',
-                        'No'
-                    );
-                    if (branchChoice === 'Yes') {
-                        await downloadCodeWithPrompt(context, {
-                            projectId,
-                            branchName,
-                            downloadLocation: downloadPath,
-                            initialFile: normalizedFileName
-                        });
-                        return;
-                    } else {
-                        return;
-                    }
-                }
-            }
+        // check metadata file
+        const metadataFilePath = path.join(projectDownloadPath, FF_METADATA_FILE_PATH);
+        const currentMetadata = fs.existsSync(metadataFilePath) ? ffMetadataFromFile(metadataFilePath) : null;
+        const currentBranchName = currentMetadata?.branch_name ? currentMetadata.branch_name : 'main';
+        const uriBranchName = branchName ? branchName : 'main';
 
-            const choice = await vscode.window.showInformationMessage(
-                'Project already exists locally. What would you like to do?',
-                { modal: true },
-                'Open Existing',
-                'Download From FlutterFlow'
-            );
+        const downloadFromFlutterFlowPrompt = `Download From FlutterFlow ${currentMetadata != null ? ` (branch = ${uriBranchName})` : ''}`;
+        const overwriteProjectChoice = await vscode.window.showInformationMessage(
+            `Project ${projectId} already exists locally ${currentMetadata != null ? ` with branch = ${currentBranchName}` : ''}. What would you like to do?`,
+            { modal: true },
+            'Open Existing',
+            downloadFromFlutterFlowPrompt
+        );
+        if (overwriteProjectChoice === undefined) {
+            return false;
+        }
 
-            if (choice === 'Open Existing') {
+        if (overwriteProjectChoice === 'Open Existing') {
+            if (currentWorkspacePath === projectDownloadPath) {
                 // If project is already open in current workspace
-                if (currentWorkspacePath === projectDownloadPath) {
-                    if (fileName) {
-                        const fullPath = path.join(projectDownloadPath, normalizedFileName);
-                        if (fs.existsSync(fullPath)) {
-                            const doc = await vscode.workspace.openTextDocument(fullPath);
-                            await vscode.window.showTextDocument(doc);
-                        }
-                    }
-                    // Ensure editor is initialized
-                    await initializeCodeEditorWithVscode();
-                    return;
-                }
-                // if the project is not open in the current workspace, open it
                 if (fileName) {
-                    await setInitialFile(projectDownloadPath, normalizedFileName);
+                    const fullPath = path.join(projectDownloadPath, normalizedFileName);
+                    if (fs.existsSync(fullPath)) {
+                        const doc = await vscode.workspace.openTextDocument(fullPath);
+                        await vscode.window.showTextDocument(doc);
+                    }
                 }
+                return false;
+            } else {
+                // If project is not open in current workspace, open it
                 await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(projectDownloadPath));
-                return;
-            } else if (!choice) {
-                return; // User cancelled
+                return false;
             }
         }
 
-        // Download new copy
-        await downloadCodeWithPrompt(context, {
-            projectId,
-            branchName,
-            downloadLocation: downloadPath,
-            initialFile: normalizedFileName
-        });
-
+        if (overwriteProjectChoice === downloadFromFlutterFlowPrompt) {
+            await downloadCodeWithPrompt(context, {
+                projectId,
+                branchName: uriBranchName,
+                downloadLocation: downloadPath,
+                initialFile: normalizedFileName
+            });
+            return true;
+        }
     } catch (err) {
         console.error('handleUri error', err);
         vscode.window.showErrorMessage(`Error opening project from URL: ${err}`);
     }
+    return false;
 }
