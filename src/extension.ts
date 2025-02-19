@@ -303,6 +303,7 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         try {
           return handleFlutterFlowUri(uri, context).then((shouldReinitializeCurrentWorkspace) => {
             if (shouldReinitializeCurrentWorkspace) {
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
               initCodeEditorFn();
             }
           });

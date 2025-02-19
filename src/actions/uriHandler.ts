@@ -50,10 +50,11 @@ export async function handleFlutterFlowUri(
             }
         }
 
-        // Check if download location is configured
-        const downloadLocation = vscode.workspace.getConfiguration('flutterflow').get<string>('downloadLocation');
+        // Get download path from settings
+        let downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
         //check if the download location is valid
-        if (!downloadLocation || !verifyDownloadLocation(downloadLocation)) {
+        const downloadLocationValid = await verifyDownloadLocation(downloadPath);
+        if (!downloadLocationValid) {
             const setLocation = await vscode.window.showInformationMessage(
                 'FlutterFlow download location not set. Would you like to set it now?',
                 { modal: true },
@@ -68,21 +69,13 @@ export async function handleFlutterFlowUri(
                 });
                 if (uris && uris[0]) {
                     await vscode.workspace.getConfiguration('flutterflow').update('downloadLocation', uris[0].fsPath, true);
+                    downloadPath = uris[0].fsPath;
                 } else {
                     return false;
                 }
             } else {
                 return false;
             }
-        }
-
-        // Get download path from settings
-        const downloadPath = vscode.workspace.getConfiguration("flutterflow").get<string>("downloadLocation") || "";
-
-        //check if the download path is a valid directory
-        if (!fs.existsSync(downloadPath)) {
-            vscode.window.showErrorMessage(`Invalid download path. ${downloadPath} does not exist.`);
-            return false;
         }
 
         // check if download path plus projectid exists
