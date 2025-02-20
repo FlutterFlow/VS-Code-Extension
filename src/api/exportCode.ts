@@ -151,7 +151,7 @@ async function callExport(
 
 async function downloadAssets(destinationPath: string, assetDescriptions: AssetDescription[], unzipToParentFolder: boolean): Promise<void> {
     const downloadPromises = assetDescriptions.map(async (assetDescription) => {
-        let assetPath = assetDescription.path;
+        let assetPath = assetDescription.path.split('/').join(path.sep);
         if (!unzipToParentFolder) {
             assetPath = path.join(...path.parse(assetPath).dir.split(path.sep).slice(1), path.parse(assetPath).base);
         }
