@@ -113,16 +113,11 @@ export async function handleFlutterFlowUri(
         }
 
         if (overwriteProjectChoice === 'Open Existing') {
-            const fullPath = path.join(projectDownloadPath, normalizedFileName);
+            const fullPath = path.join(currentWorkspacePath || '', normalizedFileName);
 
-            if (currentWorkspacePath === projectDownloadPath) {
-                // If project is already open in current workspace
-                if (fileName) {
-                    if (fs.existsSync(fullPath)) {
-                        const doc = await vscode.workspace.openTextDocument(fullPath);
-                        await vscode.window.showTextDocument(doc);
-                    }
-                }
+            if (fs.existsSync(fullPath)) {
+                const doc = await vscode.workspace.openTextDocument(fullPath);
+                await vscode.window.showTextDocument(doc);
                 return false;
             } else {
                 // If project is not open in current workspace, open it
