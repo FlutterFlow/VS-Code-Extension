@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.9
+
+- Fix issue with downloading assets on Windows.
+
 ## 1.1.5
 
 - Added branch name info to status bar.
