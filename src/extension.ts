@@ -1,7 +1,5 @@
 // The module 'vscode' contains the VS Code extensibility API
 import * as vscode from "vscode";
-import * as path from "path";
-import * as fs from "fs";
 
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
@@ -15,7 +13,7 @@ import { pushToFF } from "./actions/pushToFF";
 import { performPullLatest } from "./actions/pullLatest";
 import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProjectState";
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
-import { FlutterFlowMetadata, getInitialFile, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
+import { FlutterFlowMetadata, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
 
 // Pattern for watching custom code files
