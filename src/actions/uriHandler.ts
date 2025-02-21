@@ -101,9 +101,9 @@ export async function handleFlutterFlowUri(
         const currentBranchName = currentMetadata?.branch_name ? currentMetadata.branch_name : 'main';
         const uriBranchName = branchName ? branchName : 'main';
 
-        const downloadFromFlutterFlowPrompt = `Download From FlutterFlow ${currentMetadata != null ? ` (branch = ${uriBranchName})` : ''}`;
+        const downloadFromFlutterFlowPrompt = `Download From FlutterFlow (branch: ${uriBranchName})`;
         const overwriteProjectChoice = await vscode.window.showInformationMessage(
-            `Project ${projectId} already exists locally ${currentMetadata != null ? ` with branch = ${currentBranchName}` : ''}. What would you like to do?`,
+            `Project ${projectId} already exists locally (branch: ${currentBranchName})`,
             { modal: true },
             'Open Existing',
             downloadFromFlutterFlowPrompt
