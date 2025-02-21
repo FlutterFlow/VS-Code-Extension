@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { exec } from 'child_process';
 
-import { ffMetadataFromFile, FlutterFlowMetadata } from "../ffState/FlutterFlowMetadata";
+import { ffMetadataFromFile, FlutterFlowMetadata, getInitialFile } from "../ffState/FlutterFlowMetadata";
 import { initializeCodeFolder } from "./downloadCode";
 import { deserializeUpdateManager, UpdateManager } from "../ffState/UpdateManager";
 import { installFlutterIfNeeded } from "../ffState/manage_flutter_version";
@@ -62,10 +62,19 @@ export async function initializeCodeEditorWithVscode(): Promise<{ metadata: Flut
     }
 
 
+    const initialFilePath = await getInitialFile(workspacePath);
     const { metadata, updateManager } = await initializeCode(workspacePath);
     if (!metadata) {
         vscode.window.showErrorMessage("Error initializing FlutterFlow Project. Could not find metadata.");
         return null;
+    }
+    if (initialFilePath) {
+        const initialFilePathAbs = path.join(workspacePath, initialFilePath);
+
+        if (fs.existsSync(initialFilePathAbs)) {
+            const doc = await vscode.workspace.openTextDocument(initialFilePathAbs);
+            await vscode.window.showTextDocument(doc);
+        }
     }
     const flutterFlowApiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), metadata.project_id, metadata.branch_name);
     //get workspace folder
