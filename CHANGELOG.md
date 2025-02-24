@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.2.0
+
+- Removed requirement to run "Start Code Editing Session" command. Environment initialization (Flutter setup and package installation) now happens automatically after downloading code.
+
 ## 1.1.9
 
 - Fix issue with downloading assets on Windows.

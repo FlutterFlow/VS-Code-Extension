@@ -28,17 +28,11 @@ This command will prompt you for three pieces of information:
 
 3. **Download Location**: A file picker will be presented for you to choose where to download your project code. The code will be downloaded to `<selected_directory>/<projectID>`.
 
-### Initialize a Code Editing Session
-
-After the code has been downloaded, you will need to initiate a **Code Editing** session using the extension. When a Code Editing session has been initiated, you’ll be able to pull and push code from VSCode to FlutterFlow.
-
-To start a Code Editing session, run the command `FlutterFlow: Start Code Editing Session`. 
-
-This command will also automatically run `flutter pub get` and will attempt to install the version of the flutter SDK currently used by FlutterFlow.
+After downloading, the extension will automatically begin initializing your environment. This process includes setting up the correct Flutter version and running `flutter pub get`, which may take a few seconds. Once initialization is complete, you can begin editing your code.
 
 ### Editing Custom Code
 
-Once your session has been initialized, you can begin adding or editing custom code. 
+Once initialization is complete, you can begin adding or editing custom code. 
 
 Right now, the only files that are editable are:
 

@@ -2,7 +2,7 @@
   "name": "flutterflow-custom-code-editor",
   "displayName": "FlutterFlow: Custom Code Editor",
   "description": "Edit your FlutterFlow custom  widgets, action, and functions.",
-  "version": "1.1.9",
+  "version": "1.2.7",
   "publisher": "FlutterFlow",
   "repository": {
 		"type": "git",
@@ -18,7 +18,10 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:pubspec.yaml",
+    "onUri"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -45,6 +48,10 @@
       {
         "command": "modifiedFiles.onClick",
         "title": "On select item"
+      },
+      {
+        "command": "flutterflow.handleUri",
+        "title": "Handle FlutterFlow URI"
       }
     ],
     "configuration": {
@@ -98,7 +105,14 @@
           "name": "FlutterFlow Warnings"
         }
       ]
-    }
+    },
+    "uriHandlers": [
+      {
+        "protocol": "vscode",
+        "uriPattern": "^vscode://flutterflow\\.custom-code-editor.*",
+        "command": "flutterflow.handleUri"
+      }
+    ]
   },
   "scripts": {
     "build": "./node_modules/typescript/bin/tsc",

@@ -1,6 +1,6 @@
 import { FlutterFlowApiClient } from "../api/FlutterFlowApiClient";
 import { insertCustomFunctionBoilerplate } from "../fileUtils/addBoilerplate";
-import { ffMetadataFromFile, ffMetadataToFile } from "../ffState/FlutterFlowMetadata";
+import { ffMetadataFromFile, ffMetadataToFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
 import { deserializeUpdateManager, UpdateManager } from "../ffState/UpdateManager";
 import { getCurrentApiUrl } from "../api/environment";
 import * as path from "path";
@@ -89,9 +89,10 @@ export interface DownloadCodeArgs {
     downloadLocation?: string;
     branchName?: string;
     skipOpen?: boolean;
+    initialFile?: string;
 }
 
-export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{projectId: string, projectPath: string} | undefined> {
+export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, args: DownloadCodeArgs = {}): Promise<{ projectId: string, projectPath: string } | undefined> {
     // Read project id from existing data and prompt user if not found.
     let projectId;
     if (args.projectId) {
@@ -196,6 +197,9 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             }
 
             const updateManager = await downloadCode(projectPath, new FlutterFlowApiClient(token, getCurrentApiUrl(), projectId, branchName));
+            if (args.initialFile) {
+                await setInitialFile(projectPath, args.initialFile);
+            }
 
             // context.globalState.update("downloadsPath", projectPath);
             // context.globalState.update("projectId", projectId);
@@ -212,3 +216,27 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
     });
     return { projectId, projectPath };
 };
+
+export async function verifyDownloadLocation(downloadPath: string): Promise<boolean> {
+    try {
+        // Check if path exists
+        if (!fs.existsSync(downloadPath)) {
+            return false;
+        }
+
+        // Check if it's a directory
+        const stats = await fs.promises.stat(downloadPath);
+        if (!stats.isDirectory()) {
+            return false;
+        }
+
+        // Check if we have write permissions
+        await fs.promises.access(downloadPath, fs.constants.W_OK);
+
+        return true;
+    } catch (error) {
+        console.error(`Error verifying download location: ${error}`);
+        return false;
+    }
+}
+
