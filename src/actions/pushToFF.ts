@@ -60,7 +60,7 @@ export async function pushToFF(apiClient: FlutterFlowApiClient, projectRoot: str
         projectId: projectId,
         uuid: requestId,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        fileMapContents: JSON.stringify(Object.fromEntries(Array.from(fileMap.entries()).filter(([_, fileInfo]: [string, FileInfo]) => fileInfo.type !== CodeType.DEPENDENCIES && fileInfo.type !== CodeType.OTHER))),
+        fileMapContents: JSON.stringify(Object.fromEntries(Array.from(fileMap.entries()).filter(([_, fileInfo]: [string, FileInfo]) => fileInfo.type !== CodeType.DEPENDENCIES))),
         functionChangesMap: functionChangesMapString
     };
     let fileErrors: Map<string, FileWarning[]> = new Map();

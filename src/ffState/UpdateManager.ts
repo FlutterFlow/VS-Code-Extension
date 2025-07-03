@@ -91,7 +91,7 @@ export class UpdateManager {
     const codeType = pathToCodeType(filePath);
     const baseName = path.basename(filePath);
 
-    if (codeType === CodeType.OTHER) return null;
+    //if (codeType === CodeType.OTHER) return null;
     if (codeType === CodeType.FUNCTION) {
       throw new Error('Cannot delete function file');
     }
@@ -126,9 +126,10 @@ export class UpdateManager {
    * @returns The created FileInfo object, or null if addition was paused or file type is not supported
    */
   public async addFile(filePath: string): Promise<FileInfo | null> {
+    //TODO handle file type other than action, widget, function
     if (this.paused) return null;
     const codeType = pathToCodeType(filePath);
-    if (codeType === CodeType.OTHER) return null;
+    //if (codeType === CodeType.OTHER) return null;
 
     // Add boilerplate if file is empty
     if (fs.readFileSync(filePath, "utf8").length === 0) {
@@ -155,7 +156,13 @@ export class UpdateManager {
       is_deleted: false,
     };
 
-    this._fileMap.set(baseName, fileInfo);
+    // TODO: base name should include the full path to the file from custom_code/ for OTHER files
+    const relativePath =  path.relative(path.join(this._rootPath, 'lib', 'custom_code'), filePath);
+    if (codeType === CodeType.OTHER) { 
+      this._fileMap.set(relativePath, fileInfo);
+    } else {
+      this._fileMap.set(baseName, fileInfo);
+    }
 
     // Update relevant index file
     if (codeType === CodeType.ACTION) {
@@ -210,7 +217,7 @@ export class UpdateManager {
     if (fileInfo.current_checksum === fileInfo.original_checksum) return fileInfo;
 
     const codeType = pathToCodeType(filePath);
-    if (codeType === CodeType.OTHER) return fileInfo;
+    //if (codeType === CodeType.OTHER) return fileInfo;
 
     fileInfo.is_deleted = false;
 
@@ -510,7 +517,22 @@ export async function deserializeUpdateManager(projectPath: string): Promise<Upd
 async function computeFileMap(filePath: string): Promise<Map<string, FileInfo>> {
   const actionIndex = parseIndexFile(await fs.promises.readFile(path.join(filePath, 'lib', 'custom_code', 'actions', 'index.dart'), 'utf-8'));
   const widgetIndex = parseIndexFile(await fs.promises.readFile(path.join(filePath, 'lib', 'custom_code', 'widgets', 'index.dart'), 'utf-8'));
+
   const newFileMap = fileMapFromIndexFiles(actionIndex, widgetIndex);
+
+  // Custom code under /actions and /widgets are not handled here.
+  const customCodeFiles = await fs.promises.readdir(path.join(filePath, 'lib', 'custom_code'), { recursive: true })
+    .then(files => files
+      .filter(file => !file.startsWith('widgets' + path.sep) && !file.startsWith('actions' + path.sep) && file.endsWith('.dart')));
+  for (const file of customCodeFiles) {
+    const fileInfo = {
+      old_identifier_name: file,
+      new_identifier_name: file,
+      type: CodeType.OTHER,
+      is_deleted: false
+    };
+    newFileMap.set(file, fileInfo);
+  }
 
   for (const [filename, fileInfo] of newFileMap.entries()) {
     let fileChecksum = '';
@@ -520,6 +542,8 @@ async function computeFileMap(filePath: string): Promise<Map<string, FileInfo>> 
       fileChecksum = computeChecksum(path.join(filePath, 'lib', 'custom_code', 'widgets', filename));
     } else if (fileInfo.type === 'F') {
       fileChecksum = computeChecksum(path.join(filePath, 'lib', 'flutter_flow', filename));
+    } else if (fileInfo.type === 'O') {
+      fileChecksum = computeChecksum(path.join(filePath, 'lib', 'custom_code', filename));
     } else if (fileInfo.type === 'D') {
       fileChecksum = computeChecksum(path.join(filePath, filename));
     }
@@ -610,6 +634,8 @@ function fullPath(rootPath: string, filePath: string, fileInfo: FileInfo): strin
     return path.join(rootPath, 'lib', 'custom_code', 'widgets', filePath);
   } else if (fileInfo.type === CodeType.FUNCTION) {
     return path.join(rootPath, 'lib', 'flutter_flow', filePath);
+  } else if (fileInfo.type === CodeType.OTHER) {
+    return path.join(rootPath, 'lib', 'custom_code', filePath);
   } else if (fileInfo.type === CodeType.DEPENDENCIES) {
     return path.join(rootPath, filePath);
   }
