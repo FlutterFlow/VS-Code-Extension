@@ -143,7 +143,7 @@ export class FlutterFlowApiClient {
      */
     async getFlutterFlowFlutterVersion(): Promise<string> {
         // Default Flutter version to use if the API call fails with a 401
-        const kFallbackFlutterVersion = "3.24.2";
+        const kFallbackFlutterVersion = "3.32.4";
         const options = {
             method: 'POST',
             headers: {
