@@ -36,6 +36,9 @@ function customFilePath(fileMapKey: string, fileInfo: FileInfo): string {
     if (fileInfo.type == 'D') {
         return 'pubspec.yaml';
     }
+    if (fileInfo.type == 'O') {
+        return path.join('lib', 'custom_code', fileMapKey);
+    }
     throw Error(`Invalid custom code filemap entry ${fileMapKey}`);
 }
 
