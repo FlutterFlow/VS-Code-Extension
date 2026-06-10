@@ -74,6 +74,10 @@
           "type": "string",
           "description": "Branch name of your FlutterFlow project to download (leave blank for 'main')."
         },
+        "flutterflow.environmentName": {
+          "type": "string",
+          "description": "Environment name of your FlutterFlow project to download (leave blank for the currently-selected environment)."
+        },
         "flutterflow.urlOverride": {
           "type": [
             "string"

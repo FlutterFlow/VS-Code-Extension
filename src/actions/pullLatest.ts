@@ -49,7 +49,7 @@ export async function performPullLatest(
             try {
                 // Indeterminate progress
                 progress.report({ increment: -1 });
-                const flutterFlowApiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), projectMetadata.project_id, projectMetadata.branch_name);
+                const flutterFlowApiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), projectMetadata.project_id, projectMetadata.branch_name, projectMetadata.environment_name || "");
                 await flutterFlowApiClient.pullCode(tempDir);
                 await initializeCodeFolder(tempDir);
                 // Copy from temp dir to project path

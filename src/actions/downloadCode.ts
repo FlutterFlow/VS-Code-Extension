@@ -14,6 +14,7 @@ export async function downloadCode(destDir: string, apiClient: FlutterFlowApiCli
     const metadata = ffMetadataFromFile(path.join(destDir, ".vscode", "ff_metadata.json"));
     metadata.project_id = apiClient.projectId;
     metadata.branch_name = apiClient.branchName;
+    metadata.environment_name = apiClient.environmentName;
     await ffMetadataToFile(path.join(destDir, ".vscode", "ff_metadata.json"), metadata);
     await initializeCodeFolder(destDir);
     const updateManager = await deserializeUpdateManager(destDir);
@@ -94,6 +95,7 @@ export interface DownloadCodeArgs {
     projectId?: string;
     downloadLocation?: string;
     branchName?: string;
+    environmentName?: string;
     skipOpen?: boolean;
     initialFile?: string;
 }
@@ -146,6 +148,28 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
         }
     }
 
+    let environmentName: string | undefined;
+    if (args.environmentName !== undefined) {
+        environmentName = args.environmentName;
+    } else {
+        environmentName =
+            process.env.FLUTTERFLOW_ENVIRONMENT_NAME ||
+            vscode.workspace.getConfiguration("flutterflow").get("environmentName");
+        const environmentNameInput = await vscode.window.showInputBox({
+            prompt: "Enter the environment name (leave blank for the currently-selected environment)",
+            placeHolder: "e.g. Production",
+            value: environmentName || "",
+            ignoreFocusOut: true,
+        });
+        if (environmentNameInput !== undefined) {
+            environmentName = environmentNameInput;
+            if (environmentNameInput) {
+                vscode.window.showInformationMessage(
+                    `Environment name saved: ${environmentNameInput}`
+                );
+            }
+        }
+    }
     let downloadLocation: string | undefined;
     let folderUri: vscode.Uri[] | undefined;
     if (args.downloadLocation) {
@@ -203,7 +227,7 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
                 branchName = "";
             }
 
-            const updateManager = await downloadCode(projectPath, new FlutterFlowApiClient(token, getCurrentApiUrl(), projectId, branchName));
+            const updateManager = await downloadCode(projectPath, new FlutterFlowApiClient(token, getCurrentApiUrl(), projectId, branchName, environmentName || ""));
             if (args.initialFile) {
                 await setInitialFile(projectPath, args.initialFile);
             }

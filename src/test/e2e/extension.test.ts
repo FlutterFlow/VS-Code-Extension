@@ -138,9 +138,9 @@ suite('FlutterFlow Extension Integration Test', () => {
 		// Wait for the file change callback to be triggered
 		await fileChangePromise;
 
-		const modifiedActionFileInfo = updateManager.fileMap.get('new_custom_action_a.dart');
+		const modifiedActionFileInfo = updateManager.fileMap.get('lib/custom_code/actions/new_custom_action_a.dart');
 		// check if the file map is updated
-		assert.strictEqual(modifiedActionFileInfo?.original_checksum, inMemoryFileMap.get('new_custom_action_a.dart')?.original_checksum, 'original checksum mismatch on action modified');
+		assert.strictEqual(modifiedActionFileInfo?.original_checksum, inMemoryFileMap.get('lib/custom_code/actions/new_custom_action_a.dart')?.original_checksum, 'original checksum mismatch on action modified');
 		assert.strictEqual(modifiedActionFileInfo?.current_checksum !== modifiedActionFileInfo?.original_checksum, true, 'current checksum should not match original checksum on action modified');
 
 		// check that the map was serialized
@@ -177,7 +177,7 @@ suite('FlutterFlow Extension Integration Test', () => {
 		await boilerplateInsertedPromise;
 
 		// check if the file map is updated
-		const newActionFileInfo = updateManager.fileMap.get('new_custom_action_c.dart');
+		const newActionFileInfo = updateManager.fileMap.get('lib/custom_code/actions/new_custom_action_c.dart');
 
 
 		assert.ok(newActionFileInfo, 'New action file info should exist in file map');
@@ -188,13 +188,13 @@ suite('FlutterFlow Extension Integration Test', () => {
 		assert.strictEqual(newActionFileInfo?.type, CodeType.ACTION, 'New file should have ACTION type');
 
 		// test file deletion
-		const fileInfoBeforeDelete = updateManager.fileMap.get('new_custom_action_b.dart');
+		const fileInfoBeforeDelete = updateManager.fileMap.get('lib/custom_code/actions/new_custom_action_b.dart');
 		await vscode.workspace.fs.delete(vscode.Uri.file(path.join(workspaceFolderName, 'lib', 'custom_code', 'actions', 'new_custom_action_b.dart')));
 		eventEmitter.fire({ filePath: path.join(workspaceFolderName, 'lib', 'custom_code', 'actions', 'new_custom_action_b.dart'), editType: 'delete' });
 		// wait for changes to be processed
 		await new Promise(resolve => setTimeout(resolve, 1000));
 
-		const fileInfoAfterDelete = updateManager.fileMap.get('new_custom_action_b.dart');
+		const fileInfoAfterDelete = updateManager.fileMap.get('lib/custom_code/actions/new_custom_action_b.dart');
 		assert.strictEqual(fileInfoAfterDelete?.is_deleted, true, 'File should be marked as deleted');
 		// assert that the file info before delete is the same as the file info after delete except for the is_deleted field
 		assert.strictEqual(fileInfoBeforeDelete?.original_checksum, fileInfoAfterDelete?.original_checksum, 'Original checksum should match before and after delete');
@@ -260,7 +260,7 @@ suite('FlutterFlow Extension Integration Test', () => {
 		await customFunctionsUpdatedPromise;
 
 		assert.strictEqual(updateManager.functionsCode, modifiedFunctionAResult, 'Modified function code should match expected code');
-		const modifiedFunctionFileInfo = updateManager.fileMap.get('custom_functions.dart');
+		const modifiedFunctionFileInfo = updateManager.fileMap.get('lib/flutter_flow/custom_functions.dart');
 		assert.strictEqual(modifiedFunctionFileInfo?.current_checksum !== modifiedFunctionFileInfo?.original_checksum, true, 'Current checksum should not match original checksum on function modified');
 		const functionChange = await updateManager.functionChange();
 		// modifications shouldn't need to be recorded explicitly in the function change object
@@ -304,7 +304,7 @@ suite('FlutterFlow Extension Integration Test', () => {
 			return new Response(JSON.stringify({ value: JSON.stringify({}) }));
 		};
 		const requestId = '123l';
-		const apiClient = new FlutterFlowApiClient(apiKey, apiUrl, projectId, branchName, mockFetchFn);
+		const apiClient = new FlutterFlowApiClient(apiKey, apiUrl, projectId, branchName, "", mockFetchFn);
 		const syncCodeResult = await pushToFF(apiClient, workspaceFolderName, updateManager, requestId);
 		assert.strictEqual(syncCodeResult.error, null, 'Sync should not return an error, but got: ' + syncCodeResult.error);
 	});
