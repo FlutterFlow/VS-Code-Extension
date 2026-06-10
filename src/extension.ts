@@ -16,8 +16,9 @@ import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
 import { FlutterFlowMetadata, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
 
-// Pattern for watching custom code files
-const kCustomFilePattern = `**/{pubspec.yaml,lib/custom_code/**,lib/flutter_flow/custom_functions.dart}`;
+// Pattern for watching custom code files. Folder-organized projects can place custom
+// code anywhere under lib/, so watch broadly and filter events in FFProjectState.
+const kCustomFilePattern = `**/{pubspec.yaml,lib/**}`;
 
 // Initialize UI components
 const ffStatusBar: FfStatusBar = new FfStatusBar('unset project id', 'unset branch name');

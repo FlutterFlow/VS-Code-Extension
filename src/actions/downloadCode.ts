@@ -1,5 +1,6 @@
 import { FlutterFlowApiClient } from "../api/FlutterFlowApiClient";
 import { insertCustomFunctionBoilerplate } from "../fileUtils/addBoilerplate";
+import { buildCustomCodeManifest } from "../fileUtils/customCodeManifest";
 import { ffMetadataFromFile, ffMetadataToFile, setInitialFile } from "../ffState/FlutterFlowMetadata";
 import { deserializeUpdateManager, UpdateManager } from "../ffState/UpdateManager";
 import { getCurrentApiUrl } from "../api/environment";
@@ -24,17 +25,22 @@ export async function downloadCode(destDir: string, apiClient: FlutterFlowApiCli
 export async function initializeCodeFolder(destDir: string) {
     // Create or update settings.json with read-only access for non-custom code files
     const settingsPath = path.join(destDir, ".vscode", "settings.json");
+    const readonlyExclude: Record<string, boolean> = {
+        [`lib/custom_code/**`]: true,
+        [`lib/flutter_flow/custom_functions.dart`]: true,
+        "pubspec.yaml": true,
+        [`lib/flutter_flow/function_changes.json`]: true,
+        [`.vscode/settings.json`]: true,
+    };
+    // Folder-organized projects can have custom code files anywhere under lib/.
+    for (const manifestPath of buildCustomCodeManifest(destDir).keys()) {
+        readonlyExclude[manifestPath] = true;
+    }
     const settings = {
         "files.readonlyInclude": {
             "**": true,
         },
-        "files.readonlyExclude": {
-            [`lib/custom_code/**`]: true,
-            [`lib/flutter_flow/custom_functions.dart`]: true,
-            "pubspec.yaml": true,
-            [`lib/flutter_flow/function_changes.json`]: true,
-            [`.vscode/settings.json`]: true,
-        },
+        "files.readonlyExclude": readonlyExclude,
     };
     // make directory if it doesn't exist
     if (!fs.existsSync(path.join(destDir, ".vscode"))) {
@@ -139,6 +145,7 @@ export async function downloadCodeWithPrompt(context: vscode.ExtensionContext, a
             );
         }
     }
+
     let downloadLocation: string | undefined;
     let folderUri: vscode.Uri[] | undefined;
     if (args.downloadLocation) {

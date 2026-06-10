@@ -57,6 +57,10 @@ export class FFProjectState {
             if (isDirectory) {
                 return;
             }
+            // The watcher covers all of lib/; ignore files that are neither tracked nor classifiable.
+            if (!this._updateManager.shouldTrackFile(edit.filePath, edit.editType)) {
+                return;
+            }
             let fileInfo: FileInfo | null = null;
             // Handle different types of edits
             if (edit.editType === 'add') {
