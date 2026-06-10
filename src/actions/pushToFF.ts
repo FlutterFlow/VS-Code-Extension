@@ -1,7 +1,7 @@
 import { CodeType, FileInfo } from "../fileUtils/FileInfo";
 import { FlutterFlowApiClient, PushCodeRequest, FileWarning } from "../api/FlutterFlowApiClient";
 
-import { UpdateManager } from "../ffState/UpdateManager";
+import type { UpdateManager } from "../ffState/UpdateManager";
 import * as path from 'path';
 import * as fs from 'fs';
 import AdmZip from "adm-zip";
@@ -22,21 +22,32 @@ type SyncCodeResult = {
     fileWarnings: Map<string, FileWarning[]>;
 };
 
-
-function customFilePath(fileMapKey: string, fileInfo: FileInfo): string {
-    if (fileInfo.type == 'A') {
-        return path.join('lib', 'custom_code', 'actions', fileMapKey);
+// The server looks up zip entries by their basename, so the wire file_map must be keyed
+// by basename. Two modified files sharing a basename therefore cannot be disambiguated.
+export function buildWireFileMap(fileMap: Map<string, FileInfo>): {
+    wireFileMap: Record<string, FileInfo>;
+    collidingPaths: string[][];
+} {
+    const wireFileMap: Record<string, FileInfo> = {};
+    const pathsByBaseName = new Map<string, string[]>();
+    for (const [filePath, fileInfo] of fileMap.entries()) {
+        if (fileInfo.type === CodeType.DEPENDENCIES || fileInfo.type === CodeType.OTHER) continue;
+        const baseName = path.posix.basename(filePath);
+        pathsByBaseName.set(baseName, [...(pathsByBaseName.get(baseName) || []), filePath]);
+        wireFileMap[baseName] = fileInfo;
     }
-    if (fileInfo.type == 'W') {
-        return path.join('lib', 'custom_code', 'widgets', fileMapKey);
+    const collidingPaths: string[][] = [];
+    for (const paths of pathsByBaseName.values()) {
+        if (paths.length < 2) continue;
+        const hasPendingChange = paths.some((p) => {
+            const fileInfo = fileMap.get(p);
+            return fileInfo && (fileInfo.is_deleted || fileInfo.original_checksum !== fileInfo.current_checksum);
+        });
+        if (hasPendingChange) {
+            collidingPaths.push(paths);
+        }
     }
-    if (fileInfo.type == 'F') {
-        return path.join('lib', 'flutter_flow', 'custom_functions.dart');
-    }
-    if (fileInfo.type == 'D') {
-        return 'pubspec.yaml';
-    }
-    throw Error(`Invalid custom code filemap entry ${fileMapKey}`);
+    return { wireFileMap, collidingPaths };
 }
 
 export async function pushToFF(apiClient: FlutterFlowApiClient, projectRoot: string, updateManager: UpdateManager, requestId: string): Promise<SyncCodeResult> {
@@ -45,11 +56,19 @@ export async function pushToFF(apiClient: FlutterFlowApiClient, projectRoot: str
     const projectId = apiClient.projectId;
 
     const fileMap: Map<string, FileInfo> = updateManager.fileMap;
-    // modifiedFiles is an array of full file paths relative to the project root
+    const { wireFileMap, collidingPaths } = buildWireFileMap(fileMap);
+    if (collidingPaths.length > 0) {
+        const collisionList = collidingPaths.map((paths) => paths.join(', ')).join('; ');
+        return {
+            error: new Error(`Cannot push: multiple custom code files share the same file name, which FlutterFlow cannot disambiguate yet. Rename one of: ${collisionList}`),
+            fileWarnings: new Map(),
+        };
+    }
+    // modifiedFiles is an array of full file paths; file map keys are project-root-relative
     const modifiedFiles = Array.from(fileMap.entries())
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        .filter(([_, file]) => file.original_checksum !== file.current_checksum)
-        .map(([key, file]) => path.join(projectRoot, customFilePath(key, file)));
+        .filter(([_, file]) => !file.is_deleted && file.original_checksum !== file.current_checksum)
+        .map(([key]) => path.join(projectRoot, ...key.split(path.posix.sep)));
     const yamlContents = fs.readFileSync(path.join(projectRoot, 'pubspec.yaml'), "utf8");
     const functionChangesMapString = JSON.stringify(await updateManager.functionChange());
     const syncCodeParams: SyncCodeParams = {
@@ -59,8 +78,7 @@ export async function pushToFF(apiClient: FlutterFlowApiClient, projectRoot: str
         branchName: branchName,
         projectId: projectId,
         uuid: requestId,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        fileMapContents: JSON.stringify(Object.fromEntries(Array.from(fileMap.entries()).filter(([_, fileInfo]: [string, FileInfo]) => fileInfo.type !== CodeType.DEPENDENCIES && fileInfo.type !== CodeType.OTHER))),
+        fileMapContents: JSON.stringify(wireFileMap),
         functionChangesMap: functionChangesMapString
     };
     let fileErrors: Map<string, FileWarning[]> = new Map();
