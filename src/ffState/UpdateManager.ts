@@ -1,16 +1,33 @@
 import * as vscode from 'vscode';
-import { FileInfo, CodeType, pathToCodeType } from "../fileUtils/FileInfo";
+import { FileInfo, CodeType, functionChangeFromFileMap, migrateLegacyFileMapKeys } from "../fileUtils/FileInfo";
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { readFileMap, writeFileMap } from "../fileUtils/fileParsing";
 import { FunctionChange, functionSimilarity } from "../fileUtils/functionSimilarity";
-import { insertCustomActionBoilerplate, insertCustomWidgetBoilerplate, toCamelCase, toPascalCase } from "../fileUtils/addBoilerplate";
+import { insertCustomActionBoilerplate, insertCustomFunctionFileBoilerplate, insertCustomWidgetBoilerplate, toCamelCase, toPascalCase } from "../fileUtils/addBoilerplate";
 import { parseTopLevelFunctions, getTopLevelNames, parseIndexFileWithDart, formatDartCode } from '../fileUtils/dartParser';
+import {
+  buildCustomCodeManifest,
+  classifyRelativePath,
+  CustomCodeManifest,
+  fullPathFromKey,
+  isFolderOrganizedProject,
+  kActionsBarrelPath,
+  kCustomFunctionsPath,
+  kWidgetsBarrelPath,
+  parseExportDirectives,
+  parseTopLevelFunctionName,
+  resolveExportTarget,
+  toPosixPath,
+} from '../fileUtils/customCodeManifest';
 
 // Path to store snapshot of custom functions for tracking changes
 const kCustomFunctionsSnapshotPath = path.join('lib', 'flutter_flow', 'custom_functions_snapshot.txt');
+
+// Only warn once per session about files we cannot classify.
+let warnedAboutUnclassifiedFile = false;
 
 /**
  * UpdateManager class is responsible for tracking and managing changes to custom code in a FlutterFlow project.
@@ -23,16 +40,22 @@ const kCustomFunctionsSnapshotPath = path.join('lib', 'flutter_flow', 'custom_fu
  */
 export class UpdateManager {
   // Map of files and their metadata.
-  // The map is keyed by filename and contains FileInfo objects with metadata about each file.
+  // The map is keyed by project-root-relative POSIX path and contains FileInfo objects with metadata about each file.
   private _fileMap: Map<string, FileInfo>;
   // Event emitter for file changes
   private _eventEmitter: EventEmitter;
-  // Maps for tracking exported symbols in action and widget files
+  // Maps for tracking exported symbols in action and widget files, keyed by export URI
   private actionIndex: Map<string, string[]>;
   private widgetIndex: Map<string, string[]>;
+  // Export shim entries for folder-organized custom functions, keyed by export URI
+  private functionsIndex: Map<string, string[]>;
   // Current and initial state of custom functions
   private _functionsCode: string;
   private _initialFunctionsCode: string;
+  // Whether the project uses the folder-organized custom code structure
+  private _folderOrganized: boolean;
+  // Manifest of custom code files derived from the barrel files
+  private _manifest: CustomCodeManifest;
   // Flag to temporarily pause file operations
   private paused: boolean = false;
   // Root path of the project
@@ -51,20 +74,30 @@ export class UpdateManager {
     return this._rootPath;
   }
 
+  public get folderOrganized(): boolean {
+    return this._folderOrganized;
+  }
+
   constructor(
     fileMap: Map<string, FileInfo>,
     rootPath: string,
     actionIndex: Map<string, string[]>,
     widgetIndex: Map<string, string[]>,
     functionsCode: string,
-    initialFunctionsCode: string
+    initialFunctionsCode: string,
+    folderOrganized: boolean = false,
+    manifest: CustomCodeManifest = new Map(),
+    functionsIndex: Map<string, string[]> = new Map()
   ) {
     this._fileMap = fileMap;
     this._rootPath = rootPath;
     this.actionIndex = actionIndex;
     this.widgetIndex = widgetIndex;
+    this.functionsIndex = functionsIndex;
     this._functionsCode = functionsCode;
     this._initialFunctionsCode = initialFunctionsCode;
+    this._folderOrganized = folderOrganized;
+    this._manifest = manifest;
     this._eventEmitter = new EventEmitter();
   }
 
@@ -80,6 +113,60 @@ export class UpdateManager {
     this._eventEmitter.removeAllListeners('fileChange');
   }
 
+  // Converts an absolute (or already relative) path to a project-root-relative POSIX key.
+  private relativeKey(filePath: string): string {
+    const relative = path.isAbsolute(filePath) ? path.relative(this._rootPath, filePath) : filePath;
+    return toPosixPath(relative);
+  }
+
+  private classify(relativeKey: string): CodeType {
+    const codeType = classifyRelativePath(relativeKey, this._manifest, this._folderOrganized);
+    if (codeType !== CodeType.OTHER) {
+      return codeType;
+    }
+    return this._fileMap.get(relativeKey)?.type ?? CodeType.OTHER;
+  }
+
+  /**
+   * Returns whether a watcher event for this file should be processed. Files that are
+   * neither tracked nor classifiable are ignored; newly created dart files outside the
+   * canonical custom code folders additionally trigger a one-time warning.
+   */
+  public shouldTrackFile(filePath: string, editType: 'add' | 'delete' | 'update'): boolean {
+    const relKey = this.relativeKey(filePath);
+    if (relKey.startsWith('..')) return false;
+    if (this._fileMap.has(relKey) || this._manifest.has(relKey)) return true;
+    if (this.classify(relKey) !== CodeType.OTHER) return true;
+    if (
+      this._folderOrganized &&
+      editType === 'add' &&
+      relKey.startsWith('lib/') &&
+      relKey.endsWith('.dart') &&
+      path.posix.basename(relKey) !== 'index.dart' &&
+      !warnedAboutUnclassifiedFile
+    ) {
+      warnedAboutUnclassifiedFile = true;
+      vscode.window.showWarningMessage(
+        "Create new custom actions/widgets/functions under lib/custom_code/... or in FlutterFlow; files created elsewhere won't sync."
+      );
+    }
+    return false;
+  }
+
+  // Finds the barrel export URI whose resolved target matches the given file key.
+  private indexKeyForFile(indexMap: Map<string, string[]>, barrelRelativePath: string, relativeKey: string): string | undefined {
+    for (const exportUri of indexMap.keys()) {
+      if (resolveExportTarget(exportUri, barrelRelativePath) === relativeKey) {
+        return exportUri;
+      }
+    }
+    return undefined;
+  }
+
+  private barrelFullPath(barrelRelativePath: string): string {
+    return fullPathFromKey(this._rootPath, barrelRelativePath);
+  }
+
   /**
    * Handles deletion of a file from the project
    * Updates file map and relevant indexes
@@ -88,34 +175,45 @@ export class UpdateManager {
    */
   public async deleteFile(filePath: string): Promise<FileInfo | null> {
     if (this.paused) return null;
-    const codeType = pathToCodeType(filePath);
-    const baseName = path.basename(filePath);
+    const relKey = this.relativeKey(filePath);
+    const codeType = this.classify(relKey);
 
     if (codeType === CodeType.OTHER) return null;
-    if (codeType === CodeType.FUNCTION) {
+    if (codeType === CodeType.FUNCTION && !this._folderOrganized) {
       throw new Error('Cannot delete function file');
     }
 
-    const fileInfo = this._fileMap.get(baseName);
+    const fileInfo = this._fileMap.get(relKey);
     if (!fileInfo) {
       return null;
     }
 
     fileInfo.is_deleted = true;
-    this._fileMap.set(baseName, fileInfo);
+    this._fileMap.set(relKey, fileInfo);
 
     // Update relevant index file
     if (codeType === CodeType.ACTION) {
-      this.actionIndex.delete(baseName);
-      await this.saveIndexFile(this.actionIndex, path.join(this._rootPath, 'lib', 'custom_code', 'actions', 'index.dart'));
+      const indexKey = this.indexKeyForFile(this.actionIndex, kActionsBarrelPath, relKey);
+      if (indexKey !== undefined) {
+        this.actionIndex.delete(indexKey);
+        await this.saveIndexFile(this.actionIndex, this.barrelFullPath(kActionsBarrelPath));
+      }
     } else if (codeType === CodeType.WIDGET) {
-      this.widgetIndex.delete(baseName);
-      await this.saveIndexFile(this.widgetIndex, path.join(this._rootPath, 'lib', 'custom_code', 'widgets', 'index.dart'));
+      const indexKey = this.indexKeyForFile(this.widgetIndex, kWidgetsBarrelPath, relKey);
+      if (indexKey !== undefined) {
+        this.widgetIndex.delete(indexKey);
+        await this.saveIndexFile(this.widgetIndex, this.barrelFullPath(kWidgetsBarrelPath));
+      }
+    } else if (codeType === CodeType.FUNCTION) {
+      const indexKey = this.indexKeyForFile(this.functionsIndex, kCustomFunctionsPath, relKey);
+      if (indexKey !== undefined) {
+        this.functionsIndex.delete(indexKey);
+        await this.saveIndexFile(this.functionsIndex, this.barrelFullPath(kCustomFunctionsPath));
+      }
     }
 
     writeFileMap(this._rootPath, this._fileMap);
-    const fullFilePath = fullPath(this._rootPath, baseName, fileInfo);
-    this._eventEmitter.emit('fileChange', fullFilePath, fileInfo);
+    this._eventEmitter.emit('fileChange', fullPathFromKey(this._rootPath, relKey), fileInfo);
     return fileInfo;
   }
 
@@ -127,7 +225,8 @@ export class UpdateManager {
    */
   public async addFile(filePath: string): Promise<FileInfo | null> {
     if (this.paused) return null;
-    const codeType = pathToCodeType(filePath);
+    const relKey = this.relativeKey(filePath);
+    const codeType = this.classify(relKey);
     if (codeType === CodeType.OTHER) return null;
 
     // Add boilerplate if file is empty
@@ -135,8 +234,7 @@ export class UpdateManager {
       await this.insertBoilerplate(filePath);
     }
 
-    const baseName = path.basename(filePath);
-    const existingFileInfo = this._fileMap.get(baseName);
+    const existingFileInfo = this._fileMap.get(relKey);
     if (existingFileInfo) {
       if (existingFileInfo.type === codeType) {
         return this.updateFile(filePath);
@@ -155,20 +253,24 @@ export class UpdateManager {
       is_deleted: false,
     };
 
-    this._fileMap.set(baseName, fileInfo);
+    this._fileMap.set(relKey, fileInfo);
 
-    // Update relevant index file
+    // Update relevant index file. New files can only be created in the canonical
+    // folders, so a basename (actions/widgets) or lib-relative (functions) URI is correct.
+    const baseName = path.basename(filePath);
     if (codeType === CodeType.ACTION) {
       this.actionIndex.set(baseName, [impliedName]);
-      await this.saveIndexFile(this.actionIndex, path.join(this._rootPath, 'lib', 'custom_code', 'actions', 'index.dart'));
+      await this.saveIndexFile(this.actionIndex, this.barrelFullPath(kActionsBarrelPath));
     } else if (codeType === CodeType.WIDGET) {
       this.widgetIndex.set(baseName, [impliedName]);
-      await this.saveIndexFile(this.widgetIndex, path.join(this._rootPath, 'lib', 'custom_code', 'widgets', 'index.dart'));
+      await this.saveIndexFile(this.widgetIndex, this.barrelFullPath(kWidgetsBarrelPath));
+    } else if (codeType === CodeType.FUNCTION && this._folderOrganized) {
+      this.functionsIndex.set(`/${relKey.replace(/^lib\//, '')}`, []);
+      await this.saveIndexFile(this.functionsIndex, this.barrelFullPath(kCustomFunctionsPath));
     }
 
     writeFileMap(this._rootPath, this._fileMap);
-    const fullFilePath = fullPath(this._rootPath, baseName, fileInfo);
-    this._eventEmitter.emit('fileChange', fullFilePath, fileInfo);
+    this._eventEmitter.emit('fileChange', fullPathFromKey(this._rootPath, relKey), fileInfo);
     return fileInfo;
   }
 
@@ -181,13 +283,13 @@ export class UpdateManager {
    */
   public async renameFile(oldFilePath: string, newFilePath: string): Promise<FileInfo | null> {
     if (this.paused) return null;
-    const oldBaseName = path.basename(oldFilePath);
-    const fileInfo = this._fileMap.get(oldBaseName);
+    const oldKey = this.relativeKey(oldFilePath);
+    const fileInfo = this._fileMap.get(oldKey);
     if (!fileInfo) {
       return null;
     }
-    this._fileMap.set(path.basename(newFilePath), fileInfo);
-    this._fileMap.delete(oldBaseName);
+    this._fileMap.set(this.relativeKey(newFilePath), fileInfo);
+    this._fileMap.delete(oldKey);
     return fileInfo;
   }
 
@@ -199,8 +301,8 @@ export class UpdateManager {
    */
   public async updateFile(filePath: string): Promise<FileInfo | null> {
     if (this.paused) return null;
-    const baseName = path.basename(filePath);
-    const fileInfo = this._fileMap.get(baseName);
+    const relKey = this.relativeKey(filePath);
+    const fileInfo = this._fileMap.get(relKey);
     if (!fileInfo) {
       return null;
     }
@@ -209,7 +311,7 @@ export class UpdateManager {
     fileInfo.current_checksum = computeChecksum(filePath);
     if (fileInfo.current_checksum === fileInfo.original_checksum) return fileInfo;
 
-    const codeType = pathToCodeType(filePath);
+    const codeType = this.classify(relKey);
     if (codeType === CodeType.OTHER) return fileInfo;
 
     fileInfo.is_deleted = false;
@@ -218,7 +320,9 @@ export class UpdateManager {
     if (codeType === CodeType.ACTION || codeType === CodeType.WIDGET) {
       const topLevelDeclarations = await getTopLevelNames(await fs.promises.readFile(filePath, 'utf-8'));
       const indexMap = codeType === CodeType.ACTION ? this.actionIndex : this.widgetIndex;
-      const indexExports = indexMap.get(baseName) || [];
+      const barrelRelativePath = codeType === CodeType.ACTION ? kActionsBarrelPath : kWidgetsBarrelPath;
+      const indexKey = this.indexKeyForFile(indexMap, barrelRelativePath, relKey);
+      const indexExports = (indexKey !== undefined ? indexMap.get(indexKey) : undefined) || [];
 
       if (indexExports.length === 0) {
         console.log('no shown exports found in index file for ', filePath);
@@ -227,12 +331,9 @@ export class UpdateManager {
         const newName = this.getNewName(topLevelDeclarations, indexExports, fileInfo.old_identifier_name);
         if (newName) {
           fileInfo.new_identifier_name = newName;
-          if (indexExports[0] !== newName) {
-            indexMap.set(baseName, [newName]);
-            const indexPath = codeType === CodeType.ACTION
-              ? path.join(this._rootPath, 'lib', 'custom_code', 'actions', 'index.dart')
-              : path.join(this._rootPath, 'lib', 'custom_code', 'widgets', 'index.dart');
-            await this.saveIndexFile(indexMap, indexPath);
+          if (indexExports[0] !== newName && indexKey !== undefined) {
+            indexMap.set(indexKey, [newName]);
+            await this.saveIndexFile(indexMap, this.barrelFullPath(barrelRelativePath));
           }
         }
       }
@@ -240,14 +341,20 @@ export class UpdateManager {
 
     // Handle updates for functions
     if (codeType === CodeType.FUNCTION) {
-      this._functionsCode = await fs.promises.readFile(path.join(this._rootPath, 'lib', 'flutter_flow', 'custom_functions.dart'), 'utf-8');
+      if (this._folderOrganized) {
+        const declaredName = parseTopLevelFunctionName(await fs.promises.readFile(filePath, 'utf-8'));
+        if (declaredName) {
+          fileInfo.new_identifier_name = declaredName;
+        }
+      } else {
+        this._functionsCode = await fs.promises.readFile(fullPathFromKey(this._rootPath, kCustomFunctionsPath), 'utf-8');
+      }
     }
 
-    this._fileMap.set(baseName, fileInfo);
+    this._fileMap.set(relKey, fileInfo);
     writeFileMap(this._rootPath, this._fileMap);
 
-    const fullFilePath = fullPath(this._rootPath, baseName, fileInfo);
-    this._eventEmitter.emit('fileChange', fullFilePath, fileInfo);
+    this._eventEmitter.emit('fileChange', fullPathFromKey(this._rootPath, relKey), fileInfo);
 
     return fileInfo;
   }
@@ -258,6 +365,9 @@ export class UpdateManager {
    * @returns Object containing function changes
    */
   public async functionChange(): Promise<FunctionChange> {
+    if (this._folderOrganized) {
+      return functionChangeFromFileMap(this._fileMap);
+    }
     const intialFunctionInfo = await parseTopLevelFunctions(this._initialFunctionsCode);
     const intialFunctionInfoMap = new Map(intialFunctionInfo.map(f => [f.name, f]));
     const currentFunctionInfo = await parseTopLevelFunctions(this._functionsCode);
@@ -311,9 +421,13 @@ export class UpdateManager {
   public async serializeUpdateManager(filePath: string = this._rootPath) {
     try {
       await this.serializeFileMap(filePath);
-      await this.saveIndexFile(this.actionIndex, path.join(filePath, 'lib', 'custom_code', 'actions', 'index.dart'));
-      await this.saveIndexFile(this.widgetIndex, path.join(filePath, 'lib', 'custom_code', 'widgets', 'index.dart'));
-      await fs.promises.writeFile(path.join(filePath, kCustomFunctionsSnapshotPath), this._initialFunctionsCode);
+      await this.saveIndexFile(this.actionIndex, fullPathFromKey(filePath, kActionsBarrelPath));
+      await this.saveIndexFile(this.widgetIndex, fullPathFromKey(filePath, kWidgetsBarrelPath));
+      if (this._folderOrganized) {
+        await this.saveIndexFile(this.functionsIndex, fullPathFromKey(filePath, kCustomFunctionsPath));
+      } else {
+        await fs.promises.writeFile(path.join(filePath, kCustomFunctionsSnapshotPath), this._initialFunctionsCode);
+      }
     } catch (error) {
       console.error('Error serializing UpdateManager:', error);
       throw error;
@@ -325,21 +439,24 @@ export class UpdateManager {
    * Reloads all indexes and file maps
    */
   public async refresh() {
+    this._folderOrganized = isFolderOrganizedProject(this._rootPath);
+    this._manifest = buildCustomCodeManifest(this._rootPath);
     this.actionIndex = new Map();
     try {
-      this.actionIndex = parseIndexFile(await fs.promises.readFile(path.join(this._rootPath, 'lib', 'custom_code', 'actions', 'index.dart'), 'utf-8'));
+      this.actionIndex = parseIndexFile(await fs.promises.readFile(this.barrelFullPath(kActionsBarrelPath), 'utf-8'));
     } catch (error) {
       console.error('Error refreshing action index:', error);
     }
     this.widgetIndex = new Map();
     try {
-      this.widgetIndex = parseIndexFile(await fs.promises.readFile(path.join(this._rootPath, 'lib', 'custom_code', 'widgets', 'index.dart'), 'utf-8'));
+      this.widgetIndex = parseIndexFile(await fs.promises.readFile(this.barrelFullPath(kWidgetsBarrelPath), 'utf-8'));
     } catch (error) {
       console.error('Error refreshing widget index:', error);
     }
-    this._fileMap = await computeFileMap(this._rootPath);
-    this._functionsCode = await fs.promises.readFile(path.join(this._rootPath, 'lib', 'flutter_flow', 'custom_functions.dart'), 'utf-8');
+    this._functionsCode = await fs.promises.readFile(this.barrelFullPath(kCustomFunctionsPath), 'utf-8');
     this._initialFunctionsCode = this._functionsCode;
+    this.functionsIndex = this._folderOrganized ? parseFunctionsShim(this._functionsCode) : new Map();
+    this._fileMap = await computeFileMap(this._rootPath, this._manifest);
   }
 
   /**
@@ -352,7 +469,9 @@ export class UpdateManager {
   }
 
   private async saveIndexFile(indexContent: Map<string, string[]>, filePath: string) {
-    const fileContent = Array.from(indexContent.entries()).map(([key, value]) => `export '${key}' show ${value.join(', ')};`).join('\n');
+    const fileContent = Array.from(indexContent.entries())
+      .map(([key, value]) => value.length > 0 ? `export '${key}' show ${value.join(', ')};` : `export '${key}';`)
+      .join('\n');
     const formattedContent = formatDartCode(fileContent);
     await fs.promises.writeFile(filePath, formattedContent || '// No exports');
   }
@@ -376,10 +495,13 @@ export class UpdateManager {
    * @param filePath Path of file to add boilerplate to
    */
   public async insertBoilerplate(filePath: string) {
-    if (pathToCodeType(filePath) === CodeType.ACTION) {
+    const codeType = this.classify(this.relativeKey(filePath));
+    if (codeType === CodeType.ACTION) {
       await insertCustomActionBoilerplate(vscode.Uri.file(filePath), await this.customFunctionsExist(), await this.themeImportPath());
-    } else if (pathToCodeType(filePath) === CodeType.WIDGET) {
+    } else if (codeType === CodeType.WIDGET) {
       await insertCustomWidgetBoilerplate(vscode.Uri.file(filePath), await this.customFunctionsExist(), await this.themeImportPath());
+    } else if (codeType === CodeType.FUNCTION && this._folderOrganized) {
+      await insertCustomFunctionFileBoilerplate(vscode.Uri.file(filePath));
     }
   }
 
@@ -440,7 +562,9 @@ export class UpdateManager {
     this._fileMap = new Map(Array.from(this._fileMap.entries()).filter(([_, fileInfo]) => !fileInfo.is_deleted));
     this._initialFunctionsCode = this._functionsCode;
     writeFileMap(this._rootPath, this._fileMap);
-    await fs.promises.writeFile(path.join(this._rootPath, kCustomFunctionsSnapshotPath), this._initialFunctionsCode);
+    if (!this._folderOrganized) {
+      await fs.promises.writeFile(path.join(this._rootPath, kCustomFunctionsSnapshotPath), this._initialFunctionsCode);
+    }
   }
 }
 
@@ -455,15 +579,19 @@ export class UpdateManager {
  */
 export async function deserializeUpdateManager(projectPath: string): Promise<UpdateManager> {
   try {
-    const actionIndexContent = fs.readFileSync(path.join(projectPath, 'lib', 'custom_code', 'actions', 'index.dart'), 'utf-8');
+    const folderOrganized = isFolderOrganizedProject(projectPath);
+    const manifest = buildCustomCodeManifest(projectPath);
+
+    const actionIndexContent = fs.readFileSync(fullPathFromKey(projectPath, kActionsBarrelPath), 'utf-8');
     const actionIndex = parseIndexFile(actionIndexContent);
 
-    const widgetIndexContent = fs.readFileSync(path.join(projectPath, 'lib', 'custom_code', 'widgets', 'index.dart'), 'utf-8');
+    const widgetIndexContent = fs.readFileSync(fullPathFromKey(projectPath, kWidgetsBarrelPath), 'utf-8');
     const widgetIndex = parseIndexFile(widgetIndexContent);
 
-    const functionsCode = fs.readFileSync(path.join(projectPath, 'lib', 'flutter_flow', 'custom_functions.dart'), 'utf-8');
+    const functionsCode = fs.readFileSync(fullPathFromKey(projectPath, kCustomFunctionsPath), 'utf-8');
+    const functionsIndex = folderOrganized ? parseFunctionsShim(functionsCode) : new Map<string, string[]>();
     let initialFunctionsCode: string;
-    if (fs.existsSync(path.join(projectPath, kCustomFunctionsSnapshotPath))) {
+    if (!folderOrganized && fs.existsSync(path.join(projectPath, kCustomFunctionsSnapshotPath))) {
       initialFunctionsCode = fs.readFileSync(path.join(projectPath, kCustomFunctionsSnapshotPath), 'utf-8');
     } else {
       initialFunctionsCode = functionsCode;
@@ -471,7 +599,8 @@ export async function deserializeUpdateManager(projectPath: string): Promise<Upd
 
     let fileMap: Map<string, FileInfo>;
     if (fs.existsSync(path.join(projectPath, '.vscode', 'file_map.json'))) {
-      fileMap = await readFileMap(projectPath);
+      fileMap = migrateLegacyFileMapKeys(await readFileMap(projectPath));
+      fileMap = reconcileFileMapWithManifest(fileMap, manifest, folderOrganized);
       // add the pubspec.yaml file to the file map if it's not already there
       if (!fileMap.has('pubspec.yaml')) {
         fileMap.set('pubspec.yaml', {
@@ -482,50 +611,101 @@ export async function deserializeUpdateManager(projectPath: string): Promise<Upd
         });
       }
     } else {
-      fileMap = await computeFileMap(projectPath);
+      fileMap = await computeFileMap(projectPath, manifest);
     }
 
     // Verify and compute checksums if needed
     for (const [filePath, fileInfo] of fileMap.entries()) {
       if (!fileInfo.original_checksum && !fileInfo.current_checksum) {
-        fileInfo.original_checksum = computeChecksum(fullPath(projectPath, filePath, fileInfo));
+        const fullFilePath = fullPathFromKey(projectPath, filePath);
+        if (!fs.existsSync(fullFilePath)) continue;
+        fileInfo.original_checksum = computeChecksum(fullFilePath);
         fileInfo.current_checksum = fileInfo.original_checksum;
         fileMap.set(filePath, fileInfo);
       }
     }
     writeFileMap(projectPath, fileMap);
 
-    return new UpdateManager(fileMap, projectPath, actionIndex, widgetIndex, functionsCode, initialFunctionsCode);
+    return new UpdateManager(fileMap, projectPath, actionIndex, widgetIndex, functionsCode, initialFunctionsCode, folderOrganized, manifest, functionsIndex);
   } catch (error) {
     console.error('Error deserializing UpdateManager:', error);
     throw error;
   }
 }
 
+// Parses the folder-organized custom_functions.dart export shim into an index map.
+function parseFunctionsShim(functionsCode: string): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const directive of parseExportDirectives(functionsCode)) {
+    index.set(directive.uri, directive.shownNames);
+  }
+  return index;
+}
+
 /**
- * Computes the file map from index files
- * @param filePath Project root path
+ * Fixes up file maps written by older extension versions: entries migrated from
+ * basename keys may point at the canonical folders while the file actually lives in a
+ * user folder, and folder-organized projects must not track the monolithic functions file.
+ */
+function reconcileFileMapWithManifest(
+  fileMap: Map<string, FileInfo>,
+  manifest: CustomCodeManifest,
+  folderOrganized: boolean
+): Map<string, FileInfo> {
+  const reconciled = new Map<string, FileInfo>();
+  for (const [key, fileInfo] of fileMap.entries()) {
+    if (folderOrganized && key === kCustomFunctionsPath && fileInfo.type === CodeType.FUNCTION) {
+      continue;
+    }
+    if (!manifest.has(key) && (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET)) {
+      const baseName = path.posix.basename(key);
+      const candidates = Array.from(manifest.entries())
+        .filter(([manifestKey, entry]) => entry.type === fileInfo.type && path.posix.basename(manifestKey) === baseName);
+      if (candidates.length === 1 && !fileMap.has(candidates[0][0])) {
+        reconciled.set(candidates[0][0], fileInfo);
+        continue;
+      }
+    }
+    reconciled.set(key, fileInfo);
+  }
+  return reconciled;
+}
+
+/**
+ * Computes the file map from the custom code manifest
+ * @param projectRoot Project root path
+ * @param manifest Manifest of custom code files
  * @returns Map of files and their metadata
  */
-async function computeFileMap(filePath: string): Promise<Map<string, FileInfo>> {
-  const actionIndex = parseIndexFile(await fs.promises.readFile(path.join(filePath, 'lib', 'custom_code', 'actions', 'index.dart'), 'utf-8'));
-  const widgetIndex = parseIndexFile(await fs.promises.readFile(path.join(filePath, 'lib', 'custom_code', 'widgets', 'index.dart'), 'utf-8'));
-  const newFileMap = fileMapFromIndexFiles(actionIndex, widgetIndex);
+async function computeFileMap(projectRoot: string, manifest: CustomCodeManifest): Promise<Map<string, FileInfo>> {
+  const newFileMap = new Map<string, FileInfo>();
 
-  for (const [filename, fileInfo] of newFileMap.entries()) {
-    let fileChecksum = '';
-    if (fileInfo.type === 'A') {
-      fileChecksum = computeChecksum(path.join(filePath, 'lib', 'custom_code', 'actions', filename));
-    } else if (fileInfo.type === 'W') {
-      fileChecksum = computeChecksum(path.join(filePath, 'lib', 'custom_code', 'widgets', filename));
-    } else if (fileInfo.type === 'F') {
-      fileChecksum = computeChecksum(path.join(filePath, 'lib', 'flutter_flow', filename));
-    } else if (fileInfo.type === 'D') {
-      fileChecksum = computeChecksum(path.join(filePath, filename));
+  for (const [relativePath, entry] of manifest.entries()) {
+    newFileMap.set(relativePath, {
+      old_identifier_name: entry.identifierName,
+      new_identifier_name: entry.identifierName,
+      type: entry.type,
+      is_deleted: false,
+    });
+  }
+
+  newFileMap.set("pubspec.yaml", {
+    "old_identifier_name": "pubspec.yaml",
+    "new_identifier_name": "pubspec.yaml",
+    "type": CodeType.DEPENDENCIES,
+    "is_deleted": false
+  });
+
+  for (const [relativePath, fileInfo] of newFileMap.entries()) {
+    const fullFilePath = fullPathFromKey(projectRoot, relativePath);
+    if (!fs.existsSync(fullFilePath)) {
+      console.error('Custom code file listed in barrel does not exist:', fullFilePath);
+      continue;
     }
+    const fileChecksum = computeChecksum(fullFilePath);
     fileInfo.current_checksum = fileChecksum;
     fileInfo.original_checksum = fileChecksum;
-    newFileMap.set(filename, fileInfo);
+    newFileMap.set(relativePath, fileInfo);
   }
   return newFileMap;
 }
@@ -547,72 +727,4 @@ function parseIndexFile(content: string): Map<string, string[]> {
 export function computeChecksum(filePath: string): string {
   const fileContent = fs.readFileSync(filePath);
   return crypto.createHash('sha256').update(fileContent).digest('hex');
-}
-
-/**
- * Creates a file map from action and widget indexes
- * @param actionIndex Map of action exports
- * @param widgetIndex Map of widget exports
- * @returns Combined file map
- */
-function fileMapFromIndexFiles(actionIndex: Map<string, string[]>, widgetIndex: Map<string, string[]>): Map<string, FileInfo> {
-  const fileMap = new Map<string, FileInfo>();
-
-  // Add actions
-  for (const [filename, exports] of actionIndex.entries()) {
-    fileMap.set(path.basename(filename), {
-      old_identifier_name: exports[0],
-      new_identifier_name: exports[0],
-      type: CodeType.ACTION,
-      is_deleted: false,
-    });
-  }
-
-  // Add widgets
-  for (const [filename, exports] of widgetIndex.entries()) {
-    fileMap.set(path.basename(filename), {
-      old_identifier_name: exports[0],
-      new_identifier_name: exports[0],
-      type: CodeType.WIDGET,
-      is_deleted: false,
-    });
-  }
-
-  // Add custom functions and pubspec
-  fileMap.set("custom_functions.dart", {
-    "old_identifier_name": "CustomFunctions",
-    "new_identifier_name": "CustomFunctions",
-    "type": CodeType.FUNCTION,
-    "is_deleted": false
-  });
-
-  fileMap.set("pubspec.yaml", {
-    "old_identifier_name": "pubspec.yaml",
-    "new_identifier_name": "pubspec.yaml",
-    "type": CodeType.DEPENDENCIES,
-    "is_deleted": false
-  });
-
-  return fileMap;
-}
-
-/**
- * Constructs full file path based on file type
- * @param rootPath Project root path
- * @param filePath Relative file path
- * @param fileInfo File metadata
- * @returns Full file path
- */
-function fullPath(rootPath: string, filePath: string, fileInfo: FileInfo): string {
-  if (fileInfo.type === CodeType.ACTION) {
-    return path.join(rootPath, 'lib', 'custom_code', 'actions', filePath);
-  } else if (fileInfo.type === CodeType.WIDGET) {
-    return path.join(rootPath, 'lib', 'custom_code', 'widgets', filePath);
-  } else if (fileInfo.type === CodeType.FUNCTION) {
-    return path.join(rootPath, 'lib', 'flutter_flow', filePath);
-  } else if (fileInfo.type === CodeType.DEPENDENCIES) {
-    return path.join(rootPath, filePath);
-  }
-  // should never happen
-  return '';
 }
