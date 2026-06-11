@@ -10,7 +10,8 @@
             "request": "launch",
             "args": [
             "--extensionDevelopmentPath=${workspaceFolder}",
-            "--enable-proposed-api=FlutterFlow.flutterflow-custom-code-editor"
+            "--enable-proposed-api=FlutterFlow.flutterflow-custom-code-editor",
+            "--disable-extension=FlutterFlow.flutterflow-custom-code-editor"
             ],
             "outFiles": [
             "${workspaceFolder}/out/**/*.js"
@@ -29,7 +30,8 @@
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}",
                 "--extensionTestsPath=${workspaceFolder}/out/test/suite/index",
-                "--enable-proposed-api=FlutterFlow.flutterflow-custom-code-editor"
+                "--enable-proposed-api=FlutterFlow.flutterflow-custom-code-editor",
+                "--disable-extension=FlutterFlow.flutterflow-custom-code-editor"
             ],
             "outFiles": [
                 "${workspaceFolder}/out/test/**/*.js"
