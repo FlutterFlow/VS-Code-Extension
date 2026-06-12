@@ -93,34 +93,40 @@ export function isFolderOrganizedProject(projectRoot: string): boolean {
     return isFolderOrganizedFunctionsFile(fs.readFileSync(functionsPath, 'utf8'));
 }
 
-// Parses the name of the first top-level function declaration in a Dart file.
-// Generated custom function files declare exactly one top-level function at column 0.
-export function parseTopLevelFunctionName(dartCode: string): string | null {
+// Parses the name of the custom function declared in a Dart file. Files may also
+// contain private helpers, so prefer `preferredName` (the name implied by the file's
+// basename) when declared, then the first non-private top-level function.
+export function parseTopLevelFunctionName(dartCode: string, preferredName?: string): string | null {
     const skipKeywords = /^(import|export|part|library|class|enum|extension|typedef|mixin|abstract|const|final|var|late)\b/;
+    const declaredNames: string[] = [];
     for (const line of stripComments(dartCode).split('\n')) {
         if (!/^[A-Za-z_$]/.test(line) || skipKeywords.test(line)) {
             continue;
         }
         const match = line.match(/^[\w$<>,?\s[\]]+?\s([a-zA-Z_$][\w$]*)\s*\(/);
         if (match) {
-            return match[1];
+            declaredNames.push(match[1]);
         }
     }
-    return null;
+    if (preferredName && declaredNames.includes(preferredName)) {
+        return preferredName;
+    }
+    return declaredNames.find((name) => !name.startsWith('_')) ?? null;
 }
 
 function functionIdentifierName(projectRoot: string, targetRelativePath: string, shownNames: string[]): string {
+    const impliedName = toCamelCase(path.posix.basename(targetRelativePath, '.dart'));
     if (shownNames.length > 0) {
         return shownNames[0];
     }
     const targetPath = fullPathFromKey(projectRoot, targetRelativePath);
     if (fs.existsSync(targetPath)) {
-        const declaredName = parseTopLevelFunctionName(fs.readFileSync(targetPath, 'utf8'));
+        const declaredName = parseTopLevelFunctionName(fs.readFileSync(targetPath, 'utf8'), impliedName);
         if (declaredName) {
             return declaredName;
         }
     }
-    return toCamelCase(path.posix.basename(targetRelativePath, '.dart'));
+    return impliedName;
 }
 
 function addBarrelEntries(
@@ -199,16 +205,14 @@ export function classifyRelativePath(
     if (!folderOrganized && relativePath === kCustomFunctionsPath) {
         return CodeType.FUNCTION;
     }
-    if (relativePath.startsWith('lib/custom_code/')) {
-        if (relativePath.includes('actions')) {
-            return CodeType.ACTION;
-        }
-        if (relativePath.includes('widgets')) {
-            return CodeType.WIDGET;
-        }
-        if (folderOrganized && relativePath.startsWith('lib/custom_code/functions/')) {
-            return CodeType.FUNCTION;
-        }
+    if (relativePath.startsWith('lib/custom_code/actions/')) {
+        return CodeType.ACTION;
+    }
+    if (relativePath.startsWith('lib/custom_code/widgets/')) {
+        return CodeType.WIDGET;
+    }
+    if (folderOrganized && relativePath.startsWith('lib/custom_code/functions/')) {
+        return CodeType.FUNCTION;
     }
     return CodeType.OTHER;
 }

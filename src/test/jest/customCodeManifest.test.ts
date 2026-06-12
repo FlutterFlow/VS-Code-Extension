@@ -92,6 +92,38 @@ String trimString(String input) {
     it('returns null when no declaration exists', () => {
         assert.equal(parseTopLevelFunctionName('// nothing here'), null);
     });
+
+    it('prefers the name implied by the basename over a helper declared above it', () => {
+        assert.equal(parseTopLevelFunctionName(`
+String _helper(String input) {
+  return input;
+}
+
+String trimString(String input) {
+  return _helper(input).trim();
+}
+`, 'trimString'), 'trimString');
+    });
+
+    it('falls back to the first non-private function when the preferred name is absent', () => {
+        assert.equal(parseTopLevelFunctionName(`
+String _helper(String input) {
+  return input;
+}
+
+String trimAll(String input) {
+  return _helper(input).trim();
+}
+`, 'trimString'), 'trimAll');
+    });
+
+    it('returns null when only private functions are declared', () => {
+        assert.equal(parseTopLevelFunctionName(`
+String _helper(String input) {
+  return input;
+}
+`, 'trimString'), null);
+    });
 });
 
 describe('buildCustomCodeManifest', () => {
@@ -133,6 +165,16 @@ describe('classifyRelativePath', () => {
         // Per-file functions don't exist in legacy mode
         assert.equal(classifyRelativePath('lib/custom_code/functions/brand_new.dart', manifest, false), CodeType.OTHER);
         assert.equal(classifyRelativePath('lib/custom_code/actions/index.dart', manifest, true), CodeType.OTHER);
+    });
+
+    it('classifies by exact canonical folder, not substring', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        // 'transactions' contains 'actions'; the file is still a function
+        assert.equal(classifyRelativePath('lib/custom_code/functions/get_transactions.dart', manifest, true), CodeType.FUNCTION);
+        assert.equal(classifyRelativePath('lib/custom_code/functions/my_widgets_list.dart', manifest, true), CodeType.FUNCTION);
+        // Files directly under lib/custom_code/ are not in a canonical folder
+        assert.equal(classifyRelativePath('lib/custom_code/actions_helper.dart', manifest, true), CodeType.OTHER);
+        assert.equal(classifyRelativePath('lib/custom_code/extractions/foo.dart', manifest, true), CodeType.OTHER);
     });
 
     it('cannot safely classify new files in arbitrary user folders', () => {

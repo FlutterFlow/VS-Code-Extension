@@ -18,26 +18,6 @@ export enum CodeType {
     OTHER = 'O',
 }
 
-export function modifiedFiles(fileMap: Map<string, FileInfo>): string[] {
-
-    const modifiedFiles: string[] = [];
-    for (const [filePath, fileInfo] of fileMap.entries()) {
-        if (fileInfo.is_deleted || fileInfo.current_checksum === fileInfo.original_checksum) continue;
-        modifiedFiles.push(filePath);
-    }
-    return modifiedFiles;
-}
-
-export function deletedFiles(fileMap: Map<string, FileInfo>): string[] {
-    const deletedFiles: string[] = [];
-    for (const [filePath, fileInfo] of fileMap.entries()) {
-        if (fileInfo.is_deleted) {
-            deletedFiles.push(filePath);
-        }
-    }
-    return deletedFiles;
-}
-
 // Reconstructs the legacy (pre folder-organized support) location of a file that
 // was tracked by basename only. Only valid for basename keys from old file maps.
 export function getRelativePath(filePath: string, fileInfo: FileInfo): string {
@@ -104,20 +84,6 @@ export function functionChangeFromFileMap(fileMap: Map<string, FileInfo>): Funct
         }
     }
     return functionChange;
-}
-
-export function pathToCodeType(filePath: string): CodeType {
-    if (!path.basename(filePath).endsWith('.dart') || filePath.endsWith('index.dart')) {
-        return CodeType.OTHER;
-    }
-    if (filePath.includes('actions')) {
-        return CodeType.ACTION;
-    } else if (filePath.includes('widgets')) {
-        return CodeType.WIDGET;
-    } else if (filePath.endsWith('custom_functions.dart')) {
-        return CodeType.FUNCTION;
-    }
-    return CodeType.OTHER;
 }
 
 export function isNew(fileInfo: FileInfo): boolean {

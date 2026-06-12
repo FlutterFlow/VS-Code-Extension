@@ -342,7 +342,8 @@ export class UpdateManager {
     // Handle updates for functions
     if (codeType === CodeType.FUNCTION) {
       if (this._folderOrganized) {
-        const declaredName = parseTopLevelFunctionName(await fs.promises.readFile(filePath, 'utf-8'));
+        const impliedName = toCamelCase(path.posix.basename(relKey, '.dart'));
+        const declaredName = parseTopLevelFunctionName(await fs.promises.readFile(filePath, 'utf-8'), impliedName);
         if (declaredName) {
           fileInfo.new_identifier_name = declaredName;
         }
