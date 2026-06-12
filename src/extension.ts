@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
 import { UpdateManager } from "./ffState/UpdateManager";
+import { CodeType } from "./fileUtils/FileInfo";
 import { FFCustomCodeTreeProvider } from "./ui/ModifiedFilesPanel";
 import { FfStatusBar } from "./ui/FfStatusBar";
 
@@ -230,6 +231,26 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         return;
       }
 
+      // Deletions are irreversible server-side, so confirm them before pushing. A file
+      // moved outside the tracked folders is seen as a deletion even though its code
+      // still exists locally, which makes silent deletion especially dangerous.
+      const pendingDeletions = (await currentUpdateManager.functionChange()).functions_to_delete.slice();
+      for (const fileInfo of currentUpdateManager.fileMap.values()) {
+        if (fileInfo.is_deleted && (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET)) {
+          pendingDeletions.push(fileInfo.old_identifier_name);
+        }
+      }
+      if (pendingDeletions.length > 0) {
+        const confirmation = await vscode.window.showWarningMessage(
+          `Pushing will permanently delete these from FlutterFlow: ${pendingDeletions.join(', ')}. Continue?`,
+          { modal: true },
+          "Push"
+        );
+        if (confirmation !== "Push") {
+          return;
+        }
+      }
+
       // Show progress during sync
       await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -251,9 +272,11 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         const syncCodeResult = await pushToFF(apiClient, projectRoot, currentUpdateManager, requestId);
 
 
-        // Handle sync results
+        // Handle sync results. A blocked or errored push must not mark anything as
+        // synced, or pending-change tracking is silently erased.
         if (syncCodeResult.error) {
           vscode.window.showErrorMessage(syncCodeResult.error.message);
+          return;
         }
         fileErrorProvider.setFileErrorsMap(syncCodeResult.fileWarnings, currentUpdateManager.fileMap, projectRoot);
         const hasCriticalErrors = Array.from(syncCodeResult.fileWarnings?.values() || []).some(warnings => warnings.some(warning => warning.isCritical));

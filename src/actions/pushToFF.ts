@@ -23,7 +23,9 @@ type SyncCodeResult = {
 };
 
 // The server looks up zip entries by their basename, so the wire file_map must be keyed
-// by basename. Two modified files sharing a basename therefore cannot be disambiguated.
+// by basename. It only consults the map for modified files (zip lookups) and deletions,
+// so only those entries are sent; two such files sharing a basename cannot be
+// disambiguated and block the push.
 export function buildWireFileMap(fileMap: Map<string, FileInfo>): {
     wireFileMap: Record<string, FileInfo>;
     collidingPaths: string[][];
@@ -32,21 +34,12 @@ export function buildWireFileMap(fileMap: Map<string, FileInfo>): {
     const pathsByBaseName = new Map<string, string[]>();
     for (const [filePath, fileInfo] of fileMap.entries()) {
         if (fileInfo.type === CodeType.DEPENDENCIES || fileInfo.type === CodeType.OTHER) continue;
+        if (!fileInfo.is_deleted && fileInfo.original_checksum === fileInfo.current_checksum) continue;
         const baseName = path.posix.basename(filePath);
         pathsByBaseName.set(baseName, [...(pathsByBaseName.get(baseName) || []), filePath]);
         wireFileMap[baseName] = fileInfo;
     }
-    const collidingPaths: string[][] = [];
-    for (const paths of pathsByBaseName.values()) {
-        if (paths.length < 2) continue;
-        const hasPendingChange = paths.some((p) => {
-            const fileInfo = fileMap.get(p);
-            return fileInfo && (fileInfo.is_deleted || fileInfo.original_checksum !== fileInfo.current_checksum);
-        });
-        if (hasPendingChange) {
-            collidingPaths.push(paths);
-        }
-    }
+    const collidingPaths = Array.from(pathsByBaseName.values()).filter((paths) => paths.length > 1);
     return { wireFileMap, collidingPaths };
 }
 
