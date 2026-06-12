@@ -98,7 +98,15 @@ async function updateSpecificCode(
         }
     }
     for (const stalePath of staleCustomCodePaths) {
-        await fs.promises.rm(fullPathFromKey(originalPath, stalePath), { force: true });
+        const fullPath = fullPathFromKey(originalPath, stalePath);
+        // Never delete outside the project root, even if a crafted barrel export or
+        // file map entry resolves there.
+        const relativeToRoot = path.relative(originalPath, fullPath);
+        if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+            console.error('Skipping stale custom code path outside the project root:', stalePath);
+            continue;
+        }
+        await fs.promises.rm(fullPath, { force: true });
     }
     await fs.promises.rm(path.join(originalPath, 'lib', 'custom_code', 'actions'), { recursive: true, force: true });
     await fs.promises.rm(path.join(originalPath, 'lib', 'custom_code', 'widgets'), { recursive: true, force: true });

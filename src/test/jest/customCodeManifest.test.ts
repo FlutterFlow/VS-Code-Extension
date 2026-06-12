@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { CodeType } from '../../fileUtils/FileInfo';
 import {
@@ -14,6 +16,16 @@ import {
 const testDataDir = path.join(__dirname, '..', '..', '..', 'testdata');
 const folderOrganizedRoot = path.join(testDataDir, 'folder_organized_project');
 const legacyRoot = path.join(testDataDir, 'legacy_project');
+
+function writeTempProject(files: Record<string, string>): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-test-'));
+    for (const [relativePath, content] of Object.entries(files)) {
+        const fullPath = path.join(root, ...relativePath.split('/'));
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, content);
+    }
+    return root;
+}
 
 describe('parseExportDirectives', () => {
     it('parses absolute and relative exports with and without show clauses', () => {
@@ -147,6 +159,33 @@ describe('buildCustomCodeManifest', () => {
         assert.deepEqual(manifest.get('lib/custom_code/widgets/my_widget.dart'), { type: CodeType.WIDGET, identifierName: 'MyWidget' });
         assert.deepEqual(manifest.get('lib/flutter_flow/custom_functions.dart'), { type: CodeType.FUNCTION, identifierName: 'CustomFunctions' });
         assert.equal(manifest.size, 3);
+    });
+
+    it('rejects export targets that escape lib/', () => {
+        const root = writeTempProject({
+            'pubspec.yaml': 'name: traversal_test\n',
+            'lib/flutter_flow/custom_functions.dart': [
+                "export '/../../outside_func.dart';",
+                "export '/custom_code/functions/good.dart';",
+                '',
+            ].join('\n'),
+            'lib/custom_code/functions/good.dart': 'String good() {\n  return "";\n}\n',
+            'lib/custom_code/actions/index.dart': [
+                "export '../../../evil.dart' show evil;",
+                "export 'fine.dart' show fine;",
+                '',
+            ].join('\n'),
+            'lib/custom_code/actions/fine.dart': 'Future fine() async {}\n',
+        });
+        try {
+            const manifest = buildCustomCodeManifest(root);
+            assert.deepEqual(Array.from(manifest.keys()).sort(), [
+                'lib/custom_code/actions/fine.dart',
+                'lib/custom_code/functions/good.dart',
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 });
 

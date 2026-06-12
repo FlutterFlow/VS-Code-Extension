@@ -73,6 +73,13 @@ export function resolveExportTarget(exportUri: string, barrelRelativePath: strin
     return path.posix.normalize(path.posix.join(path.posix.dirname(barrelRelativePath), exportUri));
 }
 
+// Resolved export targets are tracked, overwritten, and deleted on pull, so any
+// target escaping lib/ (via '..' segments) must be rejected. Both branches of
+// resolveExportTarget normalize, so escaping paths no longer start with 'lib/'.
+export function isExportTargetWithinLib(target: string): boolean {
+    return target.startsWith('lib/');
+}
+
 // A folder-organized custom_functions.dart is a pure export shim: nothing but
 // export directives, comments, and whitespace. Legacy files always contain imports
 // and (possibly) function declarations.
@@ -144,6 +151,10 @@ function addBarrelEntries(
             continue;
         }
         const target = resolveExportTarget(directive.uri, barrelRelativePath);
+        if (!isExportTargetWithinLib(target)) {
+            console.error('Ignoring barrel export that escapes lib/:', directive.uri);
+            continue;
+        }
         const fallbackName = type === CodeType.WIDGET
             ? toPascalCase(path.posix.basename(target, '.dart'))
             : toCamelCase(path.posix.basename(target, '.dart'));
@@ -173,6 +184,10 @@ export function buildCustomCodeManifest(projectRoot: string): CustomCodeManifest
                 continue;
             }
             const target = resolveExportTarget(directive.uri, kCustomFunctionsPath);
+            if (!isExportTargetWithinLib(target)) {
+                console.error('Ignoring barrel export that escapes lib/:', directive.uri);
+                continue;
+            }
             manifest.set(target, {
                 type: CodeType.FUNCTION,
                 identifierName: functionIdentifierName(projectRoot, target, directive.shownNames),
