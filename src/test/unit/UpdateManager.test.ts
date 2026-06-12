@@ -124,6 +124,41 @@ describe('UpdateManager', () => {
         assert.ok(!actionIndex.has('my_action.dart'));
     });
 
+    it('should clear is_deleted when a file is recreated with identical content', async () => {
+        const filePath = path.join(tempDir, 'pubspec.yaml');
+        const deleted = await updateManager.deleteFile(filePath);
+        assert.ok(deleted);
+        assert.strictEqual(deleted.is_deleted, true);
+
+        // Simulates git checkout/stash restoring the identical file
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.is_deleted, false);
+        assert.strictEqual(updateManager.fileMap.get('pubspec.yaml')?.is_deleted, false);
+
+        await updateManager.setToSynced();
+        assert.ok(updateManager.fileMap.has('pubspec.yaml'));
+    });
+
+    it('should not report stale function deletions after an edit is reverted', async () => {
+        const filePath = path.join(tempDir, 'lib/flutter_flow/custom_functions.dart');
+        const originalContent = fs.readFileSync(filePath, 'utf8');
+
+        await fs.promises.writeFile(filePath, originalContent + '\nString func338() {\n  return "func338";\n}\n');
+        await updateManager.updateFile(filePath);
+        assert.deepEqual((await updateManager.functionChange()).functions_to_add, ['func338']);
+
+        await fs.promises.writeFile(filePath, originalContent);
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.current_checksum, result.original_checksum);
+        assert.deepEqual(await updateManager.functionChange(), {
+            functions_to_rename: [],
+            functions_to_delete: [],
+            functions_to_add: [],
+        });
+    });
+
     it('should generate function changes correctly', async () => {
 
         const functionImports = `// Automatic FlutterFlow imports
@@ -308,6 +343,22 @@ describe('UpdateManager (folder-organized)', () => {
         const shimContent = fs.readFileSync(path.join(tempDir, 'lib/flutter_flow/custom_functions.dart'), 'utf8');
         assert.ok(!shimContent.includes('trim_string.dart'));
         assert.ok(shimContent.includes("export '/events/festival/festival_date.dart';"));
+    });
+
+    it('should clear is_deleted when a function file is recreated with identical content', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/functions/trim_string.dart');
+        const originalContent = fs.readFileSync(filePath, 'utf8');
+        await fs.promises.rm(filePath);
+        const deleted = await updateManager.deleteFile(filePath);
+        assert.ok(deleted);
+        assert.strictEqual(deleted.is_deleted, true);
+
+        await fs.promises.writeFile(filePath, originalContent);
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.is_deleted, false);
+        const functionChanges = await updateManager.functionChange();
+        assert.deepEqual(functionChanges.functions_to_delete, []);
     });
 
     it('should add a new function file under lib/custom_code/functions', async () => {

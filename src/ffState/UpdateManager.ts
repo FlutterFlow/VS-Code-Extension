@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { FileInfo, CodeType, functionChangeFromFileMap, migrateLegacyFileMapKeys } from "../fileUtils/FileInfo";
 import * as path from 'path';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { readFileMap, writeFileMap } from "../fileUtils/fileParsing";
 import { FunctionChange, functionSimilarity } from "../fileUtils/functionSimilarity";
@@ -11,6 +10,7 @@ import { parseTopLevelFunctions, getTopLevelNames, parseIndexFileWithDart, forma
 import {
   buildCustomCodeManifest,
   classifyRelativePath,
+  computeChecksum,
   CustomCodeManifest,
   fullPathFromKey,
   isFolderOrganizedProject,
@@ -19,9 +19,12 @@ import {
   kWidgetsBarrelPath,
   parseExportDirectives,
   parseTopLevelFunctionName,
+  reconcileFileMapWithManifest,
   resolveExportTarget,
   toPosixPath,
 } from '../fileUtils/customCodeManifest';
+
+export { computeChecksum };
 
 // Path to store snapshot of custom functions for tracking changes
 const kCustomFunctionsSnapshotPath = path.join('lib', 'flutter_flow', 'custom_functions_snapshot.txt');
@@ -217,6 +220,27 @@ export class UpdateManager {
     return fileInfo;
   }
 
+  /** Re-adds the barrel export that deleteFile removed, if it is missing. */
+  private async restoreIndexEntry(relKey: string, fileInfo: FileInfo, codeType: CodeType): Promise<void> {
+    const libUri = `/${relKey.replace(/^lib\//, '')}`;
+    if (codeType === CodeType.ACTION) {
+      if (this.indexKeyForFile(this.actionIndex, kActionsBarrelPath, relKey) === undefined) {
+        this.actionIndex.set(libUri, [fileInfo.new_identifier_name]);
+        await this.saveIndexFile(this.actionIndex, this.barrelFullPath(kActionsBarrelPath));
+      }
+    } else if (codeType === CodeType.WIDGET) {
+      if (this.indexKeyForFile(this.widgetIndex, kWidgetsBarrelPath, relKey) === undefined) {
+        this.widgetIndex.set(libUri, [fileInfo.new_identifier_name]);
+        await this.saveIndexFile(this.widgetIndex, this.barrelFullPath(kWidgetsBarrelPath));
+      }
+    } else if (codeType === CodeType.FUNCTION && this._folderOrganized) {
+      if (this.indexKeyForFile(this.functionsIndex, kCustomFunctionsPath, relKey) === undefined) {
+        this.functionsIndex.set(libUri, []);
+        await this.saveIndexFile(this.functionsIndex, this.barrelFullPath(kCustomFunctionsPath));
+      }
+    }
+  }
+
   /**
    * Adds a new file to the project and updates the corresponding index.
    * Creates a new FileInfo entry with default values based on the file type.
@@ -307,14 +331,30 @@ export class UpdateManager {
       return null;
     }
 
-    // Update checksum and check for changes
-    fileInfo.current_checksum = computeChecksum(filePath);
-    if (fileInfo.current_checksum === fileInfo.original_checksum) return fileInfo;
-
     const codeType = this.classify(relKey);
     if (codeType === CodeType.OTHER) return fileInfo;
 
-    fileInfo.is_deleted = false;
+    fileInfo.current_checksum = computeChecksum(filePath);
+    const undeleted = fileInfo.is_deleted;
+    if (undeleted) {
+      // A delete followed by a re-create (e.g. git checkout/stash) must clear the
+      // deletion and restore the export deleteFile removed, even when the content is
+      // unchanged — otherwise the next push reports a stale deletion.
+      fileInfo.is_deleted = false;
+      await this.restoreIndexEntry(relKey, fileInfo, codeType);
+    }
+    if (fileInfo.current_checksum === fileInfo.original_checksum) {
+      // A reverted edit must still refresh the cached functions code, or a later push
+      // reports deletions for functions that are back in the file.
+      if (codeType === CodeType.FUNCTION && !this._folderOrganized) {
+        this._functionsCode = await fs.promises.readFile(fullPathFromKey(this._rootPath, kCustomFunctionsPath), 'utf-8');
+      }
+      if (undeleted) {
+        this._fileMap.set(relKey, fileInfo);
+        writeFileMap(this._rootPath, this._fileMap);
+      }
+      return fileInfo;
+    }
 
     // Handle updates for actions and widgets
     if (codeType === CodeType.ACTION || codeType === CodeType.WIDGET) {
@@ -601,7 +641,7 @@ export async function deserializeUpdateManager(projectPath: string): Promise<Upd
     let fileMap: Map<string, FileInfo>;
     if (fs.existsSync(path.join(projectPath, '.vscode', 'file_map.json'))) {
       fileMap = migrateLegacyFileMapKeys(await readFileMap(projectPath));
-      fileMap = reconcileFileMapWithManifest(fileMap, manifest, folderOrganized);
+      fileMap = reconcileFileMapWithManifest(fileMap, manifest, folderOrganized, projectPath);
       // add the pubspec.yaml file to the file map if it's not already there
       if (!fileMap.has('pubspec.yaml')) {
         fileMap.set('pubspec.yaml', {
@@ -641,35 +681,6 @@ function parseFunctionsShim(functionsCode: string): Map<string, string[]> {
     index.set(directive.uri, directive.shownNames);
   }
   return index;
-}
-
-/**
- * Fixes up file maps written by older extension versions: entries migrated from
- * basename keys may point at the canonical folders while the file actually lives in a
- * user folder, and folder-organized projects must not track the monolithic functions file.
- */
-function reconcileFileMapWithManifest(
-  fileMap: Map<string, FileInfo>,
-  manifest: CustomCodeManifest,
-  folderOrganized: boolean
-): Map<string, FileInfo> {
-  const reconciled = new Map<string, FileInfo>();
-  for (const [key, fileInfo] of fileMap.entries()) {
-    if (folderOrganized && key === kCustomFunctionsPath && fileInfo.type === CodeType.FUNCTION) {
-      continue;
-    }
-    if (!manifest.has(key) && (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET)) {
-      const baseName = path.posix.basename(key);
-      const candidates = Array.from(manifest.entries())
-        .filter(([manifestKey, entry]) => entry.type === fileInfo.type && path.posix.basename(manifestKey) === baseName);
-      if (candidates.length === 1 && !fileMap.has(candidates[0][0])) {
-        reconciled.set(candidates[0][0], fileInfo);
-        continue;
-      }
-    }
-    reconciled.set(key, fileInfo);
-  }
-  return reconciled;
 }
 
 /**
@@ -718,14 +729,4 @@ async function computeFileMap(projectRoot: string, manifest: CustomCodeManifest)
  */
 function parseIndexFile(content: string): Map<string, string[]> {
   return parseIndexFileWithDart(content);
-}
-
-/**
- * Computes SHA-256 checksum of a file
- * @param filePath Path to file
- * @returns Hex string of checksum
- */
-export function computeChecksum(filePath: string): string {
-  const fileContent = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(fileContent).digest('hex');
 }

@@ -2,14 +2,16 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CodeType } from '../../fileUtils/FileInfo';
+import { CodeType, FileInfo } from '../../fileUtils/FileInfo';
 import {
     buildCustomCodeManifest,
     classifyRelativePath,
+    computeChecksum,
     isFolderOrganizedFunctionsFile,
     isFolderOrganizedProject,
     parseExportDirectives,
     parseTopLevelFunctionName,
+    reconcileFileMapWithManifest,
     resolveExportTarget,
 } from '../../fileUtils/customCodeManifest';
 
@@ -228,5 +230,92 @@ describe('classifyRelativePath', () => {
         assert.equal(classifyRelativePath('pubspec.yaml', manifest, false), CodeType.DEPENDENCIES);
         // In folder-organized mode the shim itself is not a tracked custom code file
         assert.equal(classifyRelativePath('lib/flutter_flow/custom_functions.dart', buildCustomCodeManifest(folderOrganizedRoot), true), CodeType.OTHER);
+    });
+});
+
+describe('reconcileFileMapWithManifest', () => {
+    function fileInfo(overrides: Partial<FileInfo> & { type: CodeType }): FileInfo {
+        return {
+            old_identifier_name: 'name',
+            new_identifier_name: 'name',
+            is_deleted: false,
+            ...overrides,
+        };
+    }
+
+    it('backfills manifest entries missing from older file maps with on-disk checksums', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        const saved = new Map<string, FileInfo>([
+            ['lib/custom_code/actions/do_this.dart', fileInfo({
+                type: CodeType.ACTION,
+                old_identifier_name: 'doThis',
+                new_identifier_name: 'doThis',
+                original_checksum: 'saved-checksum',
+                current_checksum: 'saved-checksum',
+            })],
+            ['pubspec.yaml', fileInfo({ type: CodeType.DEPENDENCIES })],
+        ]);
+        const reconciled = reconcileFileMapWithManifest(saved, manifest, true, folderOrganizedRoot);
+
+        const backfilled = reconciled.get('lib/custom_code/functions/trim_string.dart');
+        assert.ok(backfilled);
+        assert.equal(backfilled.type, CodeType.FUNCTION);
+        assert.equal(backfilled.old_identifier_name, 'trimString');
+        assert.equal(backfilled.is_deleted, false);
+        const diskChecksum = computeChecksum(path.join(folderOrganizedRoot, 'lib', 'custom_code', 'functions', 'trim_string.dart'));
+        assert.equal(backfilled.original_checksum, diskChecksum);
+        assert.equal(backfilled.current_checksum, diskChecksum);
+        assert.ok(reconciled.has('lib/events/festival/festival_date.dart'));
+        // Saved entries keep their checksums
+        assert.equal(reconciled.get('lib/custom_code/actions/do_this.dart')?.original_checksum, 'saved-checksum');
+        assert.ok(reconciled.has('pubspec.yaml'));
+    });
+
+    it('drops the monolithic functions entry in folder-organized projects', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        const saved = new Map<string, FileInfo>([
+            ['lib/flutter_flow/custom_functions.dart', fileInfo({ type: CodeType.FUNCTION })],
+        ]);
+        const reconciled = reconcileFileMapWithManifest(saved, manifest, true, folderOrganizedRoot);
+        assert.ok(!reconciled.has('lib/flutter_flow/custom_functions.dart'));
+    });
+
+    it('relocates a uniquely-named legacy entry to its manifest path', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        const saved = new Map<string, FileInfo>([
+            ['lib/custom_code/actions/plan_festival.dart', fileInfo({
+                type: CodeType.ACTION,
+                old_identifier_name: 'planFestival',
+                new_identifier_name: 'planFestival',
+                original_checksum: 'saved-checksum',
+                current_checksum: 'saved-checksum',
+            })],
+        ]);
+        const reconciled = reconcileFileMapWithManifest(saved, manifest, true, folderOrganizedRoot);
+        assert.ok(!reconciled.has('lib/custom_code/actions/plan_festival.dart'));
+        assert.equal(reconciled.get('lib/events/festival/plan_festival.dart')?.original_checksum, 'saved-checksum');
+    });
+
+    it('drops a stale legacy entry when the manifest tracks a same-named file elsewhere', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        const saved = new Map<string, FileInfo>([
+            // Stale reconstructed path: no such file on disk
+            ['lib/custom_code/actions/plan_festival.dart', fileInfo({
+                type: CodeType.ACTION,
+                original_checksum: 'stale-checksum',
+                current_checksum: 'stale-checksum',
+            })],
+            // The real location is already tracked, so relocation cannot apply
+            ['lib/events/festival/plan_festival.dart', fileInfo({
+                type: CodeType.ACTION,
+                old_identifier_name: 'planFestival',
+                new_identifier_name: 'planFestival',
+                original_checksum: 'real-checksum',
+                current_checksum: 'real-checksum',
+            })],
+        ]);
+        const reconciled = reconcileFileMapWithManifest(saved, manifest, true, folderOrganizedRoot);
+        assert.ok(!reconciled.has('lib/custom_code/actions/plan_festival.dart'));
+        assert.equal(reconciled.get('lib/events/festival/plan_festival.dart')?.original_checksum, 'real-checksum');
     });
 });

@@ -1,6 +1,7 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CodeType } from './FileInfo';
+import { CodeType, FileInfo } from './FileInfo';
 
 // Canonical custom code paths (project-root-relative, POSIX).
 export const kActionsBarrelPath = 'lib/custom_code/actions/index.dart';
@@ -26,6 +27,12 @@ export function toPosixPath(filePath: string): string {
 
 export function fullPathFromKey(rootPath: string, relativeKey: string): string {
     return path.join(rootPath, ...relativeKey.split(path.posix.sep));
+}
+
+// Computes the SHA-256 checksum of a file as a hex string.
+export function computeChecksum(filePath: string): string {
+    const fileContent = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(fileContent).digest('hex');
 }
 
 // Converts a string to camel case. E.g. "hello_world" -> "helloWorld"
@@ -230,4 +237,59 @@ export function classifyRelativePath(
         return CodeType.FUNCTION;
     }
     return CodeType.OTHER;
+}
+
+/**
+ * Fixes up file maps written by older extension versions: entries migrated from
+ * basename keys may point at the canonical folders while the file actually lives in a
+ * user folder, folder-organized projects must not track the monolithic functions file,
+ * and manifest entries the old map never knew about (e.g. per-file functions) must be
+ * backfilled so edits to them are tracked.
+ */
+export function reconcileFileMapWithManifest(
+    fileMap: Map<string, FileInfo>,
+    manifest: CustomCodeManifest,
+    folderOrganized: boolean,
+    projectRoot: string
+): Map<string, FileInfo> {
+    const reconciled = new Map<string, FileInfo>();
+    for (const [key, fileInfo] of fileMap.entries()) {
+        if (folderOrganized && key === kCustomFunctionsPath && fileInfo.type === CodeType.FUNCTION) {
+            continue;
+        }
+        if (!manifest.has(key) && (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET)) {
+            const baseName = path.posix.basename(key);
+            const candidates = Array.from(manifest.entries())
+                .filter(([manifestKey, entry]) => entry.type === fileInfo.type && path.posix.basename(manifestKey) === baseName);
+            if (candidates.length === 1 && !fileMap.has(candidates[0][0])) {
+                reconciled.set(candidates[0][0], fileInfo);
+                continue;
+            }
+            // The reconstructed path is stale (no file on disk) and the manifest knows a
+            // same-named file elsewhere; drop it and let the backfill below take over.
+            if (candidates.length > 0 && !fs.existsSync(fullPathFromKey(projectRoot, key))) {
+                continue;
+            }
+        }
+        reconciled.set(key, fileInfo);
+    }
+    for (const [key, entry] of manifest.entries()) {
+        if (reconciled.has(key)) {
+            continue;
+        }
+        const fileInfo: FileInfo = {
+            old_identifier_name: entry.identifierName,
+            new_identifier_name: entry.identifierName,
+            type: entry.type,
+            is_deleted: false,
+        };
+        const fullPath = fullPathFromKey(projectRoot, key);
+        if (fs.existsSync(fullPath)) {
+            const checksum = computeChecksum(fullPath);
+            fileInfo.original_checksum = checksum;
+            fileInfo.current_checksum = checksum;
+        }
+        reconciled.set(key, fileInfo);
+    }
+    return reconciled;
 }
