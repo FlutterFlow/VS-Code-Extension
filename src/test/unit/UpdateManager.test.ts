@@ -361,6 +361,31 @@ describe('UpdateManager (folder-organized)', () => {
         assert.deepEqual(functionChanges.functions_to_delete, []);
     });
 
+    it('should block a tracked function file rename and suppress its watcher events', async () => {
+        const oldPath = path.join(tempDir, 'lib/events/festival/festival_date.dart');
+        const newPath = path.join(tempDir, 'lib/events/festival/festival_date_renamed.dart');
+
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), true);
+        // The file map is untouched; the rename's delete(old)/create(new) and the
+        // revert's events are all ignored.
+        assert.ok(updateManager.fileMap.has('lib/events/festival/festival_date.dart'));
+        assert.strictEqual(updateManager.shouldTrackFile(oldPath, 'delete'), false);
+        assert.strictEqual(updateManager.shouldTrackFile(newPath, 'add'), false);
+    });
+
+    it('should block a tracked action file rename', async () => {
+        const oldPath = path.join(tempDir, 'lib/events/festival/plan_festival.dart');
+        const newPath = path.join(tempDir, 'lib/events/festival/plan_party.dart');
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), true);
+    });
+
+    it('should not block renames of untracked files', async () => {
+        const oldPath = path.join(tempDir, 'lib/scratch.dart');
+        const newPath = path.join(tempDir, 'lib/scratch_renamed.dart');
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), false);
+        assert.strictEqual(updateManager.shouldTrackFile(oldPath, 'delete'), false);
+    });
+
     it('should add a new function file under lib/custom_code/functions', async () => {
         const filePath = path.join(tempDir, 'lib/custom_code/functions/new_func.dart');
         await fs.promises.writeFile(filePath, '');

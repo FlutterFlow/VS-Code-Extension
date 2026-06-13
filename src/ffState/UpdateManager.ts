@@ -61,6 +61,9 @@ export class UpdateManager {
   private _manifest: CustomCodeManifest;
   // Flag to temporarily pause file operations
   private paused: boolean = false;
+  // Relative keys touched by a just-handled rename, with their expiry time. Used to
+  // ignore the watcher's delete(old)/create(new) events that a rename produces.
+  private _recentlyRenamed: Map<string, number> = new Map();
   // Root path of the project
   private _rootPath: string;
 
@@ -130,6 +133,23 @@ export class UpdateManager {
     return this._fileMap.get(relativeKey)?.type ?? CodeType.OTHER;
   }
 
+  // Window during which the watcher events produced by a rename are ignored.
+  private static readonly kRenameGuardMs = 3000;
+
+  private markRecentlyRenamed(relKey: string): void {
+    this._recentlyRenamed.set(relKey, Date.now() + UpdateManager.kRenameGuardMs);
+  }
+
+  private wasRecentlyRenamed(relKey: string): boolean {
+    const expiry = this._recentlyRenamed.get(relKey);
+    if (expiry === undefined) return false;
+    if (Date.now() > expiry) {
+      this._recentlyRenamed.delete(relKey);
+      return false;
+    }
+    return true;
+  }
+
   /**
    * Returns whether a watcher event for this file should be processed. Files that are
    * neither tracked nor classifiable are ignored; newly created dart files outside the
@@ -138,6 +158,9 @@ export class UpdateManager {
   public shouldTrackFile(filePath: string, editType: 'add' | 'delete' | 'update'): boolean {
     const relKey = this.relativeKey(filePath);
     if (relKey.startsWith('..')) return false;
+    // A file involved in a just-handled rename produces delete(old)/create(new) watcher
+    // events; ignore them so the rename isn't misread as a deletion plus a new file.
+    if (this.wasRecentlyRenamed(relKey)) return false;
     if (this._fileMap.has(relKey) || this._manifest.has(relKey)) return true;
     if (this.classify(relKey) !== CodeType.OTHER) return true;
     if (
@@ -150,7 +173,9 @@ export class UpdateManager {
     ) {
       warnedAboutUnclassifiedFile = true;
       vscode.window.showWarningMessage(
-        "Create new custom actions/widgets/functions under lib/custom_code/... or in FlutterFlow; files created elsewhere won't sync."
+        `"${path.posix.basename(relKey)}" won't sync to FlutterFlow. Create new custom code in FlutterFlow ` +
+        "(or under lib/custom_code/), and rename existing custom code from the VS Code Explorer — renaming a " +
+        "file from the terminal, or moving it into an untracked folder, can't be synced."
       );
     }
     return false;
@@ -299,22 +324,31 @@ export class UpdateManager {
   }
 
   /**
-   * Handles renaming of files in the project
-   * Updates file map with new file name
-   * @param oldFilePath Original file path
-   * @param newFilePath New file path
-   * @returns Updated FileInfo or null
+   * Decides whether a file rename must be blocked. FlutterFlow derives a custom code
+   * file's name from its declared identifier (function/action/widget name) and
+   * regenerates it on the next Pull Latest, so a local rename of a tracked custom code
+   * file can't be represented and only causes drift (the watcher reads it as a deletion
+   * plus an untracked new file). Returns true when the caller should revert the rename.
+   *
+   * Also guards the involved paths so the watcher's delete(old)/create(new) events — and
+   * the caller's revert events — are ignored rather than misread as a deletion.
    */
-  public async renameFile(oldFilePath: string, newFilePath: string): Promise<FileInfo | null> {
-    if (this.paused) return null;
+  public blockRename(oldFilePath: string, newFilePath: string): boolean {
     const oldKey = this.relativeKey(oldFilePath);
-    const fileInfo = this._fileMap.get(oldKey);
-    if (!fileInfo) {
-      return null;
+    if (!this._fileMap.has(oldKey)) {
+      return false;
     }
-    this._fileMap.set(this.relativeKey(newFilePath), fileInfo);
-    this._fileMap.delete(oldKey);
-    return fileInfo;
+    const codeType = this.classify(oldKey);
+    const isCustomCodeFile =
+      codeType === CodeType.ACTION ||
+      codeType === CodeType.WIDGET ||
+      (codeType === CodeType.FUNCTION && this._folderOrganized);
+    if (!isCustomCodeFile) {
+      return false;
+    }
+    this.markRecentlyRenamed(oldKey);
+    this.markRecentlyRenamed(this.relativeKey(newFilePath));
+    return true;
   }
 
   /**

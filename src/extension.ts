@@ -3,7 +3,6 @@ import * as vscode from "vscode";
 
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
-import { UpdateManager } from "./ffState/UpdateManager";
 import { CodeType } from "./fileUtils/FileInfo";
 import { FFCustomCodeTreeProvider } from "./ui/ModifiedFilesPanel";
 import { FfStatusBar } from "./ui/FfStatusBar";
@@ -325,16 +324,27 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     })
   );
 
-  // Handle file rename events
+  // Block renaming tracked custom code files. FlutterFlow owns their file names
+  // (regenerated from the declared identifier on pull), so a local rename can't be
+  // represented and only causes drift. Revert it through a workspace edit so any open
+  // editor follows the file back, then point the user at the supported way to rename.
   const renameDisposable = vscode.workspace.onDidRenameFiles(
     async (e: vscode.FileRenameEvent) => {
+      const updateManager = projectState?.updateManager;
+      if (!updateManager) {
+        return;
+      }
       for (const file of e.files) {
-        const oldName = file.oldUri.fsPath;
-        const newName = file.newUri.fsPath;
-        const updateManager = context.workspaceState.get<UpdateManager>("updateManager");
-        if (updateManager) {
-          await updateManager.renameFile(oldName, newName);
+        if (!updateManager.blockRename(file.oldUri.fsPath, file.newUri.fsPath)) {
+          continue;
         }
+        const edit = new vscode.WorkspaceEdit();
+        edit.renameFile(file.newUri, file.oldUri);
+        await vscode.workspace.applyEdit(edit);
+        vscode.window.showWarningMessage(
+          "Renaming custom code files isn't supported. FlutterFlow generates the file name from the " +
+          "function/action/widget name — rename it in FlutterFlow, or change the declared name inside the file."
+        );
       }
     }
   );
