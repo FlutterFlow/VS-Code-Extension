@@ -64,6 +64,9 @@ export class UpdateManager {
   // Relative keys touched by a just-handled rename, with their expiry time. Used to
   // ignore the watcher's delete(old)/create(new) events that a rename produces.
   private _recentlyRenamed: Map<string, number> = new Map();
+  // When the current editing session started. Used to ignore the burst of watcher
+  // "create" events the OS replays for the just-downloaded project files.
+  private _editingStartedAt: number = Date.now();
   // Root path of the project
   private _rootPath: string;
 
@@ -136,6 +139,30 @@ export class UpdateManager {
   // Window during which the watcher events produced by a rename are ignored.
   private static readonly kRenameGuardMs = 3000;
 
+  // Window after an editing session starts during which the "won't sync" warning is
+  // suppressed, to skip the OS's replayed create events for the downloaded files.
+  private static readonly kEditingWarmupMs = 5000;
+
+  /** Marks the start of an editing session (resets the warm-up window). */
+  public markEditingStarted(): void {
+    this._editingStartedAt = Date.now();
+  }
+
+  private inEditingWarmup(): boolean {
+    return Date.now() - this._editingStartedAt < UpdateManager.kEditingWarmupMs;
+  }
+
+  // True when the file was already on disk before this session started — i.e. a
+  // downloaded/pulled file whose create event the OS is replaying, not one the user
+  // just authored. Robust even if the replay arrives after the warm-up window.
+  private existedBeforeSession(filePath: string): boolean {
+    try {
+      return fs.statSync(filePath).mtimeMs <= this._editingStartedAt;
+    } catch {
+      return false;
+    }
+  }
+
   private markRecentlyRenamed(relKey: string): void {
     this._recentlyRenamed.set(relKey, Date.now() + UpdateManager.kRenameGuardMs);
   }
@@ -169,6 +196,8 @@ export class UpdateManager {
       relKey.startsWith('lib/') &&
       relKey.endsWith('.dart') &&
       path.posix.basename(relKey) !== 'index.dart' &&
+      !this.inEditingWarmup() &&
+      !this.existedBeforeSession(filePath) &&
       !warnedAboutUnclassifiedFile
     ) {
       warnedAboutUnclassifiedFile = true;
