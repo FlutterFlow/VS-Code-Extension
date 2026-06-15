@@ -1,5 +1,13 @@
 # Change Log
 
+## 1.3.0
+
+- Support the folder-organized custom code structure: custom functions, actions, and widgets are now synced wherever they live under `lib/` (not just `lib/custom_code/`), discovered from the generated barrel files.
+- Pull a specific environment when downloading code, via the new `flutterflow.environmentName` setting.
+- Confirm before a push that would delete custom code from FlutterFlow, and keep local changes tracked when a push fails.
+- Renaming a custom code file is now blocked (FlutterFlow generates file names from the function/action/widget name) — rename in FlutterFlow or change the declared name instead.
+- Various custom code sync reliability fixes.
+
 ## 1.2.0
 
 - Removed requirement to run "Start Code Editing Session" command. Environment initialization (Flutter setup and package installation) now happens automatically after downloading code.
