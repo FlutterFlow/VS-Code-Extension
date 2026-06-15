@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 
 import { FileErrorProvider } from "./ui/FileErrorsPanel";
 import { getCurrentWebAppUrl, getApiKey, getCurrentApiUrl } from "./api/environment";
-import { UpdateManager } from "./ffState/UpdateManager";
+import { CodeType } from "./fileUtils/FileInfo";
 import { FFCustomCodeTreeProvider } from "./ui/ModifiedFilesPanel";
 import { FfStatusBar } from "./ui/FfStatusBar";
 
@@ -16,8 +16,9 @@ import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
 import { FlutterFlowMetadata, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
 
-// Pattern for watching custom code files
-const kCustomFilePattern = `**/{pubspec.yaml,lib/custom_code/**,lib/flutter_flow/custom_functions.dart}`;
+// Pattern for watching custom code files. Folder-organized projects can place custom
+// code anywhere under lib/, so watch broadly and filter events in FFProjectState.
+const kCustomFilePattern = `**/{pubspec.yaml,lib/**}`;
 
 // Initialize UI components
 const ffStatusBar: FfStatusBar = new FfStatusBar('unset project id', 'unset branch name');
@@ -229,6 +230,26 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         return;
       }
 
+      // Deletions are irreversible server-side, so confirm them before pushing. A file
+      // moved outside the tracked folders is seen as a deletion even though its code
+      // still exists locally, which makes silent deletion especially dangerous.
+      const pendingDeletions = (await currentUpdateManager.functionChange()).functions_to_delete.slice();
+      for (const fileInfo of currentUpdateManager.fileMap.values()) {
+        if (fileInfo.is_deleted && (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET)) {
+          pendingDeletions.push(fileInfo.old_identifier_name);
+        }
+      }
+      if (pendingDeletions.length > 0) {
+        const confirmation = await vscode.window.showWarningMessage(
+          `Pushing will permanently delete these from FlutterFlow: ${pendingDeletions.join(', ')}. Continue?`,
+          { modal: true },
+          "Push"
+        );
+        if (confirmation !== "Push") {
+          return;
+        }
+      }
+
       // Show progress during sync
       await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -250,9 +271,11 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         const syncCodeResult = await pushToFF(apiClient, projectRoot, currentUpdateManager, requestId);
 
 
-        // Handle sync results
+        // Handle sync results. A blocked or errored push must not mark anything as
+        // synced, or pending-change tracking is silently erased.
         if (syncCodeResult.error) {
           vscode.window.showErrorMessage(syncCodeResult.error.message);
+          return;
         }
         fileErrorProvider.setFileErrorsMap(syncCodeResult.fileWarnings, currentUpdateManager.fileMap, projectRoot);
         const hasCriticalErrors = Array.from(syncCodeResult.fileWarnings?.values() || []).some(warnings => warnings.some(warning => warning.isCritical));
@@ -301,16 +324,27 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
     })
   );
 
-  // Handle file rename events
+  // Block renaming tracked custom code files. FlutterFlow owns their file names
+  // (regenerated from the declared identifier on pull), so a local rename can't be
+  // represented and only causes drift. Revert it through a workspace edit so any open
+  // editor follows the file back, then point the user at the supported way to rename.
   const renameDisposable = vscode.workspace.onDidRenameFiles(
     async (e: vscode.FileRenameEvent) => {
+      const updateManager = projectState?.updateManager;
+      if (!updateManager) {
+        return;
+      }
       for (const file of e.files) {
-        const oldName = file.oldUri.fsPath;
-        const newName = file.newUri.fsPath;
-        const updateManager = context.workspaceState.get<UpdateManager>("updateManager");
-        if (updateManager) {
-          await updateManager.renameFile(oldName, newName);
+        if (!updateManager.blockRename(file.oldUri.fsPath, file.newUri.fsPath)) {
+          continue;
         }
+        const edit = new vscode.WorkspaceEdit();
+        edit.renameFile(file.newUri, file.oldUri);
+        await vscode.workspace.applyEdit(edit);
+        vscode.window.showWarningMessage(
+          "Renaming custom code files isn't supported. FlutterFlow generates the file name from the " +
+          "function/action/widget name — rename it in FlutterFlow, or change the declared name inside the file."
+        );
       }
     }
   );

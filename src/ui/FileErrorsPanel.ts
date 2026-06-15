@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { FileWarning } from "../api/FlutterFlowApiClient";
-import { FileInfo, getRelativePath } from "../fileUtils/FileInfo";
+import { FileInfo } from "../fileUtils/FileInfo";
 
 
 // FileErrorItem class for displaying file errors in the Flutterflow Problems panel
@@ -78,8 +78,11 @@ export class FileErrorProvider implements vscode.TreeDataProvider<FileErrorItem>
             return Promise.resolve(
                 Array.from(this.fileErrors.keys()).map(
                     (fileName) => {
-                        const fileInfo = this.fileMap.get(fileName);
-                        const filePath = fileInfo ? path.join(this.rootPath, getRelativePath(fileName, fileInfo)) : fileName;
+                        // The server reports warnings by basename; the file map is keyed by relative path.
+                        const fileMapKey = this.fileMap.has(fileName)
+                            ? fileName
+                            : Array.from(this.fileMap.keys()).find((key) => path.posix.basename(key) === fileName);
+                        const filePath = fileMapKey ? path.join(this.rootPath, ...fileMapKey.split('/')) : fileName;
                         return new FileErrorItem(
                             fileName,
                             vscode.TreeItemCollapsibleState.Collapsed,

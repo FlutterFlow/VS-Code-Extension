@@ -7,7 +7,9 @@
 const config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/test'],
+  // Only the pure-unit jest tests live here; the tests under src/test/{unit,e2e,smoke}
+  // run inside the VS Code test harness (`npm test`) instead.
+  roots: ['<rootDir>/src/test/jest'],
   testMatch: ['**/*.test.ts'],
   transform: {
     '^.+\\.tsx?$': 'ts-jest',

@@ -10,7 +10,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { UpdateManager, deserializeUpdateManager, computeChecksum } from '../../ffState/UpdateManager';
 import * as path from 'path';
 import { FileInfo } from '../../fileUtils/FileInfo';
-import { mockFiles } from '../util/mockFiles';
+import { mockFiles, mockFolderOrganizedFiles } from '../util/mockFiles';
 import { FunctionChange } from '../../fileUtils/functionSimilarity';
 
 let updateManager: UpdateManager;
@@ -19,9 +19,9 @@ let updateManager: UpdateManager;
 // let widgetIndex: Map<string, string[]>;
 // let functionsCode: string;
 
-async function createBaseTempDir() {
+async function createBaseTempDir(files: Map<string, string> = mockFiles) {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'UpdateManager-test-'));
-    for (const [file, content] of mockFiles) {
+    for (const [file, content] of files) {
         const filePath = path.join(tempDir, file);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         await fs.promises.writeFile(filePath, content);
@@ -60,7 +60,7 @@ describe('UpdateManager', () => {
 
         const fileMap: Map<string, FileInfo> = (updateManager as any).fileMap;
         const actionIndex: Map<string, string[]> = (updateManager as any).actionIndex;
-        assert.ok(fileMap.has('test_action_a.dart'));
+        assert.ok(fileMap.has('lib/custom_code/actions/test_action_a.dart'));
         assert.ok(actionIndex.has('test_action_a.dart'));
     });
 
@@ -77,7 +77,7 @@ describe('UpdateManager', () => {
         });
         const fileMap: Map<string, FileInfo> = (updateManager as any).fileMap;
         const widgetIndex: Map<string, string[]> = (updateManager as any).widgetIndex;
-        assert.ok(fileMap.has('test_widget_a.dart'));
+        assert.ok(fileMap.has('lib/custom_code/widgets/test_widget_a.dart'));
         assert.ok(widgetIndex.has('test_widget_a.dart'));
     });
 
@@ -122,6 +122,41 @@ describe('UpdateManager', () => {
         });
         const actionIndex: Map<string, string[]> = (updateManager as any).actionIndex;
         assert.ok(!actionIndex.has('my_action.dart'));
+    });
+
+    it('should clear is_deleted when a file is recreated with identical content', async () => {
+        const filePath = path.join(tempDir, 'pubspec.yaml');
+        const deleted = await updateManager.deleteFile(filePath);
+        assert.ok(deleted);
+        assert.strictEqual(deleted.is_deleted, true);
+
+        // Simulates git checkout/stash restoring the identical file
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.is_deleted, false);
+        assert.strictEqual(updateManager.fileMap.get('pubspec.yaml')?.is_deleted, false);
+
+        await updateManager.setToSynced();
+        assert.ok(updateManager.fileMap.has('pubspec.yaml'));
+    });
+
+    it('should not report stale function deletions after an edit is reverted', async () => {
+        const filePath = path.join(tempDir, 'lib/flutter_flow/custom_functions.dart');
+        const originalContent = fs.readFileSync(filePath, 'utf8');
+
+        await fs.promises.writeFile(filePath, originalContent + '\nString func338() {\n  return "func338";\n}\n');
+        await updateManager.updateFile(filePath);
+        assert.deepEqual((await updateManager.functionChange()).functions_to_add, ['func338']);
+
+        await fs.promises.writeFile(filePath, originalContent);
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.current_checksum, result.original_checksum);
+        assert.deepEqual(await updateManager.functionChange(), {
+            functions_to_rename: [],
+            functions_to_delete: [],
+            functions_to_add: [],
+        });
     });
 
     it('should generate function changes correctly', async () => {
@@ -246,6 +281,148 @@ void testFunctionA() {
             const functionChanges = await updateManager.functionChange();
             assert.deepEqual(functionChanges, testCase.expectedFunctionChanges, `function changes should match expected for test case ${index}`);
         }
+    });
+});
+
+describe('UpdateManager (folder-organized)', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+        tempDir = await createBaseTempDir(mockFolderOrganizedFiles);
+        updateManager = await deserializeUpdateManager(tempDir);
+    });
+
+    afterEach(() => {
+        if (tempDir) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('should deserialize per-file function entries', async () => {
+        assert.strictEqual(updateManager.folderOrganized, true);
+        const fileMap: Map<string, FileInfo> = updateManager.fileMap;
+        assert.strictEqual(fileMap.get('lib/custom_code/functions/trim_string.dart')?.type, 'F');
+        assert.strictEqual(fileMap.get('lib/custom_code/functions/trim_string.dart')?.old_identifier_name, 'trimString');
+        assert.strictEqual(fileMap.get('lib/events/festival/festival_date.dart')?.type, 'F');
+        assert.strictEqual(fileMap.get('lib/events/festival/festival_date.dart')?.old_identifier_name, 'festivalDate');
+        assert.strictEqual(fileMap.get('lib/custom_code/actions/do_this.dart')?.type, 'A');
+        assert.strictEqual(fileMap.get('lib/events/festival/plan_festival.dart')?.type, 'A');
+        assert.strictEqual(fileMap.get('pubspec.yaml')?.type, 'D');
+        // The export shim itself is not a tracked custom code file
+        assert.ok(!fileMap.has('lib/flutter_flow/custom_functions.dart'));
+    });
+
+    it('should detect a function rename within a per-file function', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/functions/trim_string.dart');
+        const originalContent = fs.readFileSync(filePath, 'utf8');
+        await fs.promises.writeFile(filePath, originalContent.replace('String trimString(', 'String trimAll('));
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.new_identifier_name, 'trimAll');
+        assert.strictEqual(result.old_identifier_name, 'trimString');
+        const functionChanges = await updateManager.functionChange();
+        assert.deepEqual(functionChanges, {
+            functions_to_rename: [{
+                old_function_name: 'trimString',
+                new_function_name: 'trimAll',
+                renamed_by_symbol: false,
+            }],
+            functions_to_delete: [],
+            functions_to_add: [],
+        });
+    });
+
+    it('should delete a function file and update the export shim', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/functions/trim_string.dart');
+        await fs.promises.rm(filePath);
+        const result = await updateManager.deleteFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.is_deleted, true);
+        const functionChanges = await updateManager.functionChange();
+        assert.deepEqual(functionChanges.functions_to_delete, ['trimString']);
+        const shimContent = fs.readFileSync(path.join(tempDir, 'lib/flutter_flow/custom_functions.dart'), 'utf8');
+        assert.ok(!shimContent.includes('trim_string.dart'));
+        assert.ok(shimContent.includes("export '/events/festival/festival_date.dart';"));
+    });
+
+    it('should clear is_deleted when a function file is recreated with identical content', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/functions/trim_string.dart');
+        const originalContent = fs.readFileSync(filePath, 'utf8');
+        await fs.promises.rm(filePath);
+        const deleted = await updateManager.deleteFile(filePath);
+        assert.ok(deleted);
+        assert.strictEqual(deleted.is_deleted, true);
+
+        await fs.promises.writeFile(filePath, originalContent);
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.is_deleted, false);
+        const functionChanges = await updateManager.functionChange();
+        assert.deepEqual(functionChanges.functions_to_delete, []);
+    });
+
+    it('should block a tracked function file rename and suppress its watcher events', async () => {
+        const oldPath = path.join(tempDir, 'lib/events/festival/festival_date.dart');
+        const newPath = path.join(tempDir, 'lib/events/festival/festival_date_renamed.dart');
+
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), true);
+        // The file map is untouched; the rename's delete(old)/create(new) and the
+        // revert's events are all ignored.
+        assert.ok(updateManager.fileMap.has('lib/events/festival/festival_date.dart'));
+        assert.strictEqual(updateManager.shouldTrackFile(oldPath, 'delete'), false);
+        assert.strictEqual(updateManager.shouldTrackFile(newPath, 'add'), false);
+    });
+
+    it('should block a tracked action file rename', async () => {
+        const oldPath = path.join(tempDir, 'lib/events/festival/plan_festival.dart');
+        const newPath = path.join(tempDir, 'lib/events/festival/plan_party.dart');
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), true);
+    });
+
+    it('should not block renames of untracked files', async () => {
+        const oldPath = path.join(tempDir, 'lib/scratch.dart');
+        const newPath = path.join(tempDir, 'lib/scratch_renamed.dart');
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), false);
+        assert.strictEqual(updateManager.shouldTrackFile(oldPath, 'delete'), false);
+    });
+
+    it('should add a new function file under lib/custom_code/functions', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/functions/new_func.dart');
+        await fs.promises.writeFile(filePath, '');
+        const result = await updateManager.addFile(filePath);
+        assert.ok(result);
+        assert.deepEqual(result, {
+            is_deleted: false,
+            new_identifier_name: 'newFunc',
+            old_identifier_name: 'newFunc',
+            type: 'F',
+        });
+        const functionChanges = await updateManager.functionChange();
+        assert.deepEqual(functionChanges.functions_to_add, ['newFunc']);
+        const shimContent = fs.readFileSync(path.join(tempDir, 'lib/flutter_flow/custom_functions.dart'), 'utf8');
+        assert.ok(shimContent.includes("export '/custom_code/functions/new_func.dart';"));
+        // The inserted boilerplate declares the implied function
+        assert.ok(fs.readFileSync(filePath, 'utf8').includes('newFunc()'));
+    });
+
+    it('should ignore new dart files in arbitrary user folders', async () => {
+        const filePath = path.join(tempDir, 'lib/events/random_thing.dart');
+        await fs.promises.writeFile(filePath, 'void randomThing() {}');
+        const result = await updateManager.addFile(filePath);
+        assert.strictEqual(result, null);
+        assert.strictEqual(updateManager.shouldTrackFile(filePath, 'add'), false);
+    });
+
+    it('should track updates to actions living in user folders', async () => {
+        const filePath = path.join(tempDir, 'lib/events/festival/plan_festival.dart');
+        const originalChecksum = computeChecksum(filePath);
+        await fs.promises.writeFile(filePath, fs.readFileSync(filePath, 'utf8') + '\n// test comment addition');
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.type, 'A');
+        assert.strictEqual(result.original_checksum, originalChecksum);
+        assert.notStrictEqual(result.current_checksum, originalChecksum);
+        assert.strictEqual(updateManager.shouldTrackFile(filePath, 'update'), true);
     });
 });
 

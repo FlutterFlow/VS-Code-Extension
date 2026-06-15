@@ -7,6 +7,9 @@ import { FlutterFlowApiClient } from "../api/FlutterFlowApiClient";
 import { getCurrentApiUrl, getApiKey } from "../api/environment";
 import { initializeCodeFolder } from "./downloadCode";
 import { FlutterFlowMetadata } from "../ffState/FlutterFlowMetadata";
+import { buildCustomCodeManifest, fullPathFromKey } from "../fileUtils/customCodeManifest";
+import { readFileMap } from "../fileUtils/fileParsing";
+import { CodeType, migrateLegacyFileMapKeys } from "../fileUtils/FileInfo";
 
 
 export async function performPullLatest(
@@ -46,11 +49,13 @@ export async function performPullLatest(
             try {
                 // Indeterminate progress
                 progress.report({ increment: -1 });
-                const flutterFlowApiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), projectMetadata.project_id, projectMetadata.branch_name);
+                const flutterFlowApiClient = new FlutterFlowApiClient(getApiKey(), getCurrentApiUrl(), projectMetadata.project_id, projectMetadata.branch_name, projectMetadata.environment_name || "");
                 await flutterFlowApiClient.pullCode(tempDir);
                 await initializeCodeFolder(tempDir);
                 // Copy from temp dir to project path
                 await updateSpecificCode(projectPath.uri.fsPath, tempDir);
+                // Regenerate settings.json readonly entries from the freshly pulled manifest
+                await initializeCodeFolder(projectPath.uri.fsPath);
                 // report success
                 vscode.window.showInformationMessage("Successfully pulled latest FlutterFlow code.");
                 // get packages
@@ -77,6 +82,32 @@ async function updateSpecificCode(
     originalPath: string,
     tmpPath: string,
 ): Promise<void> {
+    // Delete every currently known custom code file (manifest + tracked file map) so
+    // files deleted or moved remotely don't linger after the copy below.
+    const staleCustomCodePaths = new Set<string>(buildCustomCodeManifest(originalPath).keys());
+    if (fs.existsSync(path.join(originalPath, '.vscode', 'file_map.json'))) {
+        try {
+            const fileMap = migrateLegacyFileMapKeys(await readFileMap(originalPath));
+            for (const [filePath, fileInfo] of fileMap.entries()) {
+                if (fileInfo.type === CodeType.ACTION || fileInfo.type === CodeType.WIDGET || fileInfo.type === CodeType.FUNCTION) {
+                    staleCustomCodePaths.add(filePath);
+                }
+            }
+        } catch (error) {
+            console.error('Error reading file map during pull:', error);
+        }
+    }
+    for (const stalePath of staleCustomCodePaths) {
+        const fullPath = fullPathFromKey(originalPath, stalePath);
+        // Never delete outside the project root, even if a crafted barrel export or
+        // file map entry resolves there.
+        const relativeToRoot = path.relative(originalPath, fullPath);
+        if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+            console.error('Skipping stale custom code path outside the project root:', stalePath);
+            continue;
+        }
+        await fs.promises.rm(fullPath, { force: true });
+    }
     await fs.promises.rm(path.join(originalPath, 'lib', 'custom_code', 'actions'), { recursive: true, force: true });
     await fs.promises.rm(path.join(originalPath, 'lib', 'custom_code', 'widgets'), { recursive: true, force: true });
 

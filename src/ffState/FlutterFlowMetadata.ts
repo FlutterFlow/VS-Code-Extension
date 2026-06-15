@@ -8,6 +8,7 @@ export type FlutterFlowMetadata = {
     };
     project_id: string;
     branch_name: string;
+    environment_name?: string;
     initial_file?: string;
 }
 

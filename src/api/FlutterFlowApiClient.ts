@@ -67,6 +67,7 @@ export class FlutterFlowApiClient {
     private baseUrl: string;
     private readonly _projectId: string;
     private readonly _branchName: string;
+    private readonly _environmentName: string;
     private fetchFn: typeof fetch;
 
     // Getter for the project ID to ensure read-only access
@@ -80,19 +81,27 @@ export class FlutterFlowApiClient {
         return this._branchName === 'main' ? '' : this._branchName;
     }
 
+    // Getter for the environment name to ensure read-only access.
+    // Blank means the project's currently-selected environment.
+    get environmentName(): string {
+        return this._environmentName;
+    }
+
     /**
      * Creates a new FlutterFlow API client instance.
      * @param apiKey - Authentication token for API access
      * @param baseUrl - Base URL for the FlutterFlow API
      * @param projectId - ID of the FlutterFlow project
      * @param branchName - Name of the branch to work with
+     * @param environmentName - Optional environment to export code from (blank for the currently-selected one)
      * @param fetchFn - Optional fetch function for making HTTP requests (useful for testing)
      */
-    constructor(apiKey: string, baseUrl: string, projectId: string, branchName: string, fetchFn: typeof fetch = fetch) {
+    constructor(apiKey: string, baseUrl: string, projectId: string, branchName: string, environmentName: string = '', fetchFn: typeof fetch = fetch) {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this._projectId = projectId;
         this._branchName = branchName;
+        this._environmentName = environmentName;
         this.fetchFn = fetchFn;
     }
 
@@ -111,6 +120,7 @@ export class FlutterFlowApiClient {
             unzipToParentFolder: false,
             exportAsModule: false,
             branchName: this.branchName,
+            environmentName: this._environmentName || undefined,
         });
     }
 

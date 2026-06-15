@@ -29,3 +29,4 @@ out/
 # dart generated analysis files
 packages/ffanalyzer/dart/.dart_tool/
 packages/ffanalyzer/dart/out/
+coverage/

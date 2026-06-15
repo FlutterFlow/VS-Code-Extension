@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { toCamelCase, toPascalCase } from "./customCodeManifest";
 // TODO: boilerplate imports aren't currently being generated properly. If a custom function
 // is added, for example, all custom actions, widgets need to be updated with the custom function
 // import. This is currently not happening. Minor issue.
@@ -89,28 +90,24 @@ import '/flutter_flow/custom_functions.dart';
   return boilerplate;
 }
 
-// Converts a string to camel case.
-// E.g. "hello_world" -> "helloWorld"
-function toCamelCase(str: string): string {
-  return str.replace(/[-_](.)/g, (_, c) => c.toUpperCase());
+// Adds boilerplate code for newly created per-file custom functions
+// (folder-organized projects only).
+async function insertCustomFunctionFileBoilerplate(file: vscode.Uri) {
+  const functionName = toCamelCase(path.basename(file.fsPath, ".dart"));
+  const boilerplate = `${insertCustomFunctionBoilerplate()}
+String ${functionName}() {
+  // Add your function code here!
+  return '';
+}
+`;
+  await vscode.workspace.fs.writeFile(file, Buffer.from(boilerplate));
 }
 
-// Converts a string to pascal case.
-// E.g. "hello_world" -> "HelloWorld"
-function toPascalCase(str: string): string {
-  return str
-    .split("_")
-    .map((word) =>
-      word
-        .replace(/(?:^\w|[A-Z]|\b\w)/g, (letter) => letter.toUpperCase())
-        .replace(/[^a-zA-Z0-9]+/g, "")
-    )
-    .join("");
-}
 export {
   insertCustomActionBoilerplate,
   insertCustomWidgetBoilerplate,
   insertCustomFunctionBoilerplate,
+  insertCustomFunctionFileBoilerplate,
   toCamelCase,
   toPascalCase,
 };

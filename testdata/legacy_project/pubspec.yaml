@@ -1,0 +1,4 @@
+name: legacy_project
+description: Test fixture for legacy custom code layout
+publish_to: none
+version: 1.0.0
