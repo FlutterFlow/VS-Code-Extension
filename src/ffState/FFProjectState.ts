@@ -80,6 +80,11 @@ export class FFProjectState {
 
     // Set the current state of the project
     public setState(state: ProjectState) {
+        // Entering EDITING means a fresh set of files just landed (initial download or a
+        // pull); restart the warm-up so the OS's replayed create events don't warn.
+        if (state === ProjectState.EDITING) {
+            this._updateManager.markEditingStarted();
+        }
         this._state = state;
     }
 
