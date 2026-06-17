@@ -1,0 +1,23 @@
+# The extension ships as a single esbuild bundle (dist/extension.js), so source,
+# dependencies, tests, and tooling don't belong in the published .vsix.
+.vscode/**
+.vscode-test/**
+.vscode-test.js
+.github/**
+src/**
+testdata/**
+coverage/**
+node_modules/**
+out/**
+dist/test/**
+**/*.map
+**/*.ts
+**/tsconfig*.json
+eslint.config.mjs
+jest.config.js
+esbuild.js
+Makefile
+DEV_GUIDE.md
+.gitignore
+.fvmrc
+**/*.vsix
