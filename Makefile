@@ -1,11 +1,20 @@
 # FlutterFlow VS Code Extension — build & publish helpers.
 #
-# Publishing targets the `FlutterFlow` Marketplace publisher and needs a
-# Personal Access Token (Azure DevOps, scope: Marketplace > Manage). Provide it
-# once with `make login`, or export VSCE_PAT in the environment.
-#
-# Always publish from a clean, merged `main` — the published artifact should
+# Always build from a clean, merged `main` — the published artifact should
 # match the repo's source of truth.
+#
+# Two ways to publish (both require membership in the `FlutterFlow` Marketplace
+# publisher: https://marketplace.visualstudio.com/manage/publishers/flutterflow):
+#
+# 1. Manual web upload (no token needed):
+#      - `make package`  (writes build/*.vsix)
+#      - Open https://marketplace.visualstudio.com/manage/publishers/flutterflow
+#      - Extensions tab -> "FlutterFlow: Custom Code Editor" row -> `...` -> Update
+#      - Drag in build/*.vsix and confirm. Version is read from package.json.
+#
+# 2. CLI (`make publish`): needs a Personal Access Token (Azure DevOps, scope
+#    Marketplace > Manage, organization "All accessible organizations").
+#    Provide it once with `make login`, or export VSCE_PAT in the environment.
 
 VSCE ?= npx --yes @vscode/vsce
 
@@ -24,7 +33,7 @@ test:
 	npm test
 	npx jest
 
-## package: produce a versioned .vsix in build/ (runs vscode:prepublish automatically)
+## package: build a versioned .vsix into build/ (drag into the web portal, or run `make publish`)
 package:
 	@mkdir -p build
 	$(VSCE) package --out build/
