@@ -151,8 +151,10 @@ describe('buildCustomCodeManifest', () => {
         assert.deepEqual(manifest.get('lib/events/festival/festival_date.dart'), { type: CodeType.FUNCTION, identifierName: 'festivalDate' });
         // Falls back to the camelCase basename when no declaration can be parsed
         assert.deepEqual(manifest.get('lib/custom_code/functions/odd_one.dart'), { type: CodeType.FUNCTION, identifierName: 'oddOne' });
+        // Standalone custom code files are tracked by their basename (including .dart)
+        assert.deepEqual(manifest.get('lib/custom_code/my_helper.dart'), { type: CodeType.CODE_FILE, identifierName: 'my_helper.dart' });
         assert.equal(manifest.has('lib/flutter_flow/custom_functions.dart'), false);
-        assert.equal(manifest.size, 6);
+        assert.equal(manifest.size, 7);
     });
 
     it('builds a manifest for a legacy project', () => {
@@ -160,7 +162,8 @@ describe('buildCustomCodeManifest', () => {
         assert.deepEqual(manifest.get('lib/custom_code/actions/my_action.dart'), { type: CodeType.ACTION, identifierName: 'myAction' });
         assert.deepEqual(manifest.get('lib/custom_code/widgets/my_widget.dart'), { type: CodeType.WIDGET, identifierName: 'MyWidget' });
         assert.deepEqual(manifest.get('lib/flutter_flow/custom_functions.dart'), { type: CodeType.FUNCTION, identifierName: 'CustomFunctions' });
-        assert.equal(manifest.size, 3);
+        assert.deepEqual(manifest.get('lib/custom_code/my_helper.dart'), { type: CodeType.CODE_FILE, identifierName: 'my_helper.dart' });
+        assert.equal(manifest.size, 4);
     });
 
     it('rejects export targets that escape lib/', () => {
@@ -213,9 +216,23 @@ describe('classifyRelativePath', () => {
         // 'transactions' contains 'actions'; the file is still a function
         assert.equal(classifyRelativePath('lib/custom_code/functions/get_transactions.dart', manifest, true), CodeType.FUNCTION);
         assert.equal(classifyRelativePath('lib/custom_code/functions/my_widgets_list.dart', manifest, true), CodeType.FUNCTION);
-        // Files directly under lib/custom_code/ are not in a canonical folder
-        assert.equal(classifyRelativePath('lib/custom_code/actions_helper.dart', manifest, true), CodeType.OTHER);
+        // Files directly under lib/custom_code/ are standalone custom code files
+        assert.equal(classifyRelativePath('lib/custom_code/actions_helper.dart', manifest, true), CodeType.CODE_FILE);
+        // A file nested in an arbitrary subfolder of lib/custom_code/ is not classifiable
         assert.equal(classifyRelativePath('lib/custom_code/extractions/foo.dart', manifest, true), CodeType.OTHER);
+    });
+
+    it('classifies standalone custom code files but not the canonical subfolders', () => {
+        const manifest = buildCustomCodeManifest(folderOrganizedRoot);
+        assert.equal(classifyRelativePath('lib/custom_code/my_helper.dart', manifest, true), CodeType.CODE_FILE);
+        assert.equal(classifyRelativePath('lib/custom_code/brand_new.dart', manifest, false), CodeType.CODE_FILE);
+        // Regression guard: files in the actions/widgets/functions subfolders keep their
+        // existing classification and must not be captured as standalone code files
+        assert.equal(classifyRelativePath('lib/custom_code/actions/do_this.dart', manifest, true), CodeType.ACTION);
+        assert.equal(classifyRelativePath('lib/custom_code/widgets/brand_new.dart', manifest, true), CodeType.WIDGET);
+        assert.equal(classifyRelativePath('lib/custom_code/functions/brand_new.dart', manifest, true), CodeType.FUNCTION);
+        // The barrel index file itself is never a standalone code file
+        assert.equal(classifyRelativePath('lib/custom_code/index.dart', manifest, true), CodeType.OTHER);
     });
 
     it('cannot safely classify new files in arbitrary user folders', () => {

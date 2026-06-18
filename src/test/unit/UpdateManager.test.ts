@@ -424,6 +424,27 @@ describe('UpdateManager (folder-organized)', () => {
         assert.notStrictEqual(result.current_checksum, originalChecksum);
         assert.strictEqual(updateManager.shouldTrackFile(filePath, 'update'), true);
     });
+
+    it('should track edits to a standalone custom code file', async () => {
+        const filePath = path.join(tempDir, 'lib/custom_code/my_helper.dart');
+        assert.strictEqual(updateManager.shouldTrackFile(filePath, 'update'), true);
+        const originalChecksum = computeChecksum(filePath);
+        await fs.promises.writeFile(filePath, fs.readFileSync(filePath, 'utf8') + '\n// edited');
+        const result = await updateManager.updateFile(filePath);
+        assert.ok(result);
+        assert.strictEqual(result.type, 'C');
+        assert.strictEqual(result.old_identifier_name, 'my_helper.dart');
+        assert.strictEqual(result.new_identifier_name, 'my_helper.dart');
+        assert.strictEqual(result.original_checksum, originalChecksum);
+        assert.notStrictEqual(result.current_checksum, originalChecksum);
+    });
+
+    it('should block a tracked custom code file rename', async () => {
+        const oldPath = path.join(tempDir, 'lib/custom_code/my_helper.dart');
+        const newPath = path.join(tempDir, 'lib/custom_code/my_helper_renamed.dart');
+        assert.strictEqual(updateManager.blockRename(oldPath, newPath), true);
+        assert.ok(updateManager.fileMap.has('lib/custom_code/my_helper.dart'));
+    });
 });
 
 // Other test cases (deleteFile, updateFile, etc.) would be converted similarly
