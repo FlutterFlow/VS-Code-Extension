@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.4.0
+
+- Sync standalone Custom Code Files: edits to files in `lib/custom_code/` now push to FlutterFlow (previously only custom functions, actions, and widgets synced).
+
 ## 1.3.0
 
 - Support the folder-organized custom code structure: custom functions, actions, and widgets are now synced wherever they live under `lib/` (not just `lib/custom_code/`), discovered from the generated barrel files.
