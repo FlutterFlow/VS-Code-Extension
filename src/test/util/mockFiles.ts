@@ -99,6 +99,11 @@ Future<DocumentReference?> createTestRun(
   ['lib/custom_code/actions/index.dart', `
         export 'my_action.dart' show myAction;
 `],
+  ['lib/custom_code/my_helper.dart',
+    `class Helper {
+  String greet() => 'hi';
+}
+`],
   ['pubspec.yaml', `
         name: flutter_flow_custom_code_editor
         description: A FlutterFlow custom code editor
@@ -162,6 +167,11 @@ Future planFestival() async {
 }
 `],
   ['lib/custom_code/widgets/index.dart', '// No exports\n'],
+  ['lib/custom_code/my_helper.dart',
+    `class Helper {
+  String greet() => 'hi';
+}
+`],
   ['pubspec.yaml', `
         name: flutter_flow_custom_code_editor
         description: A FlutterFlow custom code editor

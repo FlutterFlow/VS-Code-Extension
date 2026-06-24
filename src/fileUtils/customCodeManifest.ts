@@ -172,6 +172,29 @@ function addBarrelEntries(
     }
 }
 
+// Standalone custom code files are generated flat under lib/custom_code/ (never in a
+// user-facing subfolder), so the directory is scanned non-recursively. Their identifier
+// name is the basename including the .dart extension, matching the server's
+// FFCustomCodeFile.identifier.name.
+function addCustomCodeFileEntries(manifest: CustomCodeManifest, projectRoot: string) {
+    const customCodeDir = fullPathFromKey(projectRoot, kCustomCodeDir);
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(customCodeDir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.dart') || entry.name === 'index.dart') {
+            continue;
+        }
+        manifest.set(path.posix.join(kCustomCodeDir, entry.name), {
+            type: CodeType.CODE_FILE,
+            identifierName: entry.name,
+        });
+    }
+}
+
 // Builds a manifest of all custom code files by parsing the three barrel files.
 // In folder-organized mode each custom function gets its own entry; in legacy mode
 // the monolithic custom_functions.dart is the single function entry.
@@ -179,6 +202,7 @@ export function buildCustomCodeManifest(projectRoot: string): CustomCodeManifest
     const manifest: CustomCodeManifest = new Map();
     addBarrelEntries(manifest, projectRoot, kActionsBarrelPath, CodeType.ACTION);
     addBarrelEntries(manifest, projectRoot, kWidgetsBarrelPath, CodeType.WIDGET);
+    addCustomCodeFileEntries(manifest, projectRoot);
 
     const functionsPath = fullPathFromKey(projectRoot, kCustomFunctionsPath);
     if (!fs.existsSync(functionsPath)) {
@@ -236,7 +260,25 @@ export function classifyRelativePath(
     if (folderOrganized && relativePath.startsWith('lib/custom_code/functions/')) {
         return CodeType.FUNCTION;
     }
+    // A standalone custom code file lives directly under lib/custom_code/ (no further
+    // subdirectory). Deeper paths are handled by the actions/widgets/functions checks above.
+    if (isCustomCodeFilePath(relativePath)) {
+        return CodeType.CODE_FILE;
+    }
     return CodeType.OTHER;
+}
+
+const kCustomCodeDir = 'lib/custom_code/';
+
+// True iff the path is exactly lib/custom_code/<name>.dart (flat, not in a subfolder,
+// and not the index.dart barrel). Callers must already have ruled out the
+// actions/widgets/functions subdirectories.
+function isCustomCodeFilePath(relativePath: string): boolean {
+    if (!relativePath.startsWith(kCustomCodeDir) || !relativePath.endsWith('.dart')) {
+        return false;
+    }
+    const remainder = relativePath.slice(kCustomCodeDir.length);
+    return !remainder.includes('/') && remainder !== 'index.dart';
 }
 
 /**

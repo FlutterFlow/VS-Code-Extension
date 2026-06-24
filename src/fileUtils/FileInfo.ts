@@ -14,6 +14,8 @@ export enum CodeType {
     ACTION = 'A',
     WIDGET = 'W',
     FUNCTION = 'F',
+    // eslint-disable-next-line no-unused-vars
+    CODE_FILE = 'C',
     DEPENDENCIES = 'D',
     OTHER = 'O',
 }
@@ -29,6 +31,9 @@ export function getRelativePath(filePath: string, fileInfo: FileInfo): string {
     }
     if (fileInfo.type === CodeType.FUNCTION) {
         return path.posix.join('lib', 'flutter_flow', filePath);
+    }
+    if (fileInfo.type === CodeType.CODE_FILE) {
+        return path.posix.join('lib', 'custom_code', filePath);
     }
     if (fileInfo.type === CodeType.DEPENDENCIES) {
         return filePath;

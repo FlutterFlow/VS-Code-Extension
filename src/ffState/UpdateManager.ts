@@ -319,10 +319,16 @@ export class UpdateManager {
       }
     }
 
-    // Create new FileInfo with default values
-    const impliedName = codeType === CodeType.WIDGET ?
-      toPascalCase(path.basename(filePath, '.dart')) :
-      toCamelCase(path.basename(filePath, '.dart'));
+    // Create new FileInfo with default values. A standalone code file's identifier is
+    // its basename (including .dart), matching the server's FFCustomCodeFile identifier.
+    let impliedName: string;
+    if (codeType === CodeType.CODE_FILE) {
+      impliedName = path.basename(filePath);
+    } else if (codeType === CodeType.WIDGET) {
+      impliedName = toPascalCase(path.basename(filePath, '.dart'));
+    } else {
+      impliedName = toCamelCase(path.basename(filePath, '.dart'));
+    }
 
     const fileInfo: FileInfo = {
       old_identifier_name: impliedName,
@@ -371,6 +377,7 @@ export class UpdateManager {
     const isCustomCodeFile =
       codeType === CodeType.ACTION ||
       codeType === CodeType.WIDGET ||
+      codeType === CodeType.CODE_FILE ||
       (codeType === CodeType.FUNCTION && this._folderOrganized);
     if (!isCustomCodeFile) {
       return false;
