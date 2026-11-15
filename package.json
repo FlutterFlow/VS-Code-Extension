@@ -52,6 +52,10 @@
       {
         "command": "flutterflow.handleUri",
         "title": "Handle FlutterFlow URI"
+      },
+      {
+        "command": "flutterflow.unlockReadonlyFiles",
+        "title": "FlutterFlow: Unlock Read-only Files"
       }
     ],
     "configuration": {

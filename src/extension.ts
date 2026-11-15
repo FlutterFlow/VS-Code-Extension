@@ -15,6 +15,7 @@ import { createEditStream, FFProjectState, ProjectState } from "./ffState/FFProj
 import { FlutterFlowApiClient } from "./api/FlutterFlowApiClient";
 import { FlutterFlowMetadata, FF_METADATA_FILE_PATH } from "./ffState/FlutterFlowMetadata";
 import { handleFlutterFlowUri } from "./actions/uriHandler";
+import { clearReadonlySettings } from "./fileUtils/readonlySettings";
 
 // Pattern for watching custom code files. Folder-organized projects can place custom
 // code anywhere under lib/, so watch broadly and filter events in FFProjectState.
@@ -303,6 +304,26 @@ export function activate(context: vscode.ExtensionContext): vscode.ExtensionCont
         }
       );
     }
+  );
+
+  // Remove the read-only rules the extension added to this project's .vscode/settings.json.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("flutterflow.unlockReadonlyFiles", async () => {
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      let unlocked = 0;
+      for (const folder of folders) {
+        if (await clearReadonlySettings(folder.uri.fsPath)) {
+          unlocked++;
+        }
+      }
+      if (unlocked > 0) {
+        vscode.window.showInformationMessage(
+          "FlutterFlow read-only rules removed. Files will be locked again the next time you download or pull this project."
+        );
+      } else {
+        vscode.window.showInformationMessage("No FlutterFlow read-only rules found in this workspace.");
+      }
+    })
   );
 
   // Register URI handler

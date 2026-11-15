@@ -7,6 +7,7 @@ import { getCurrentApiUrl } from "../api/environment";
 import * as path from "path";
 import * as vscode from "vscode";
 import * as fs from "fs";
+import { writeReadonlySettings } from "../fileUtils/readonlySettings";
 
 export async function downloadCode(destDir: string, apiClient: FlutterFlowApiClient): Promise<UpdateManager> {
     console.log(`Downloading code from FlutterFlow to ${destDir}, project ID: ${apiClient.projectId}, branch: ${apiClient.branchName}`);
@@ -24,8 +25,8 @@ export async function downloadCode(destDir: string, apiClient: FlutterFlowApiCli
 
 
 export async function initializeCodeFolder(destDir: string) {
-    // Create or update settings.json with read-only access for non-custom code files
-    const settingsPath = path.join(destDir, ".vscode", "settings.json");
+    // Make generated code read-only, keeping custom code editable. Merges with the
+    // user's own read-only rules and records what was added (see readonlySettings.ts).
     const readonlyExclude: Record<string, boolean> = {
         [`lib/custom_code/**`]: true,
         [`lib/flutter_flow/custom_functions.dart`]: true,
@@ -37,24 +38,7 @@ export async function initializeCodeFolder(destDir: string) {
     for (const manifestPath of buildCustomCodeManifest(destDir).keys()) {
         readonlyExclude[manifestPath] = true;
     }
-    const settings = {
-        "files.readonlyInclude": {
-            "**": true,
-        },
-        "files.readonlyExclude": readonlyExclude,
-    };
-    // make directory if it doesn't exist
-    if (!fs.existsSync(path.join(destDir, ".vscode"))) {
-        fs.mkdirSync(path.join(destDir, ".vscode"), { recursive: true });
-    }
-    // if the file does exist read it and merge the settings
-    if (fs.existsSync(settingsPath)) {
-        const existingSettings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-        const mergedSettings = { ...existingSettings, ...settings };
-        await fs.promises.writeFile(settingsPath, JSON.stringify(mergedSettings, null, 2));
-    } else {
-        await fs.promises.writeFile(settingsPath, JSON.stringify(settings, null, 2));
-    }
+    await writeReadonlySettings(destDir, { "**": true }, readonlyExclude);
 
     const customCodePath = path.join(destDir, "lib", "custom_code");
     const functionsPath = path.join(
